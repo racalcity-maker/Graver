@@ -1,0 +1,76 @@
+{
+  "pins": {
+    "xStep": 8,
+    "xDir": 9,
+    "xSecondaryStep": -1,
+    "xSecondaryDir": -1,
+    "yStep": 4,
+    "yDir": 5,
+    "ySecondaryStep": 6,
+    "ySecondaryDir": 7,
+    "motorsEnable": 10,
+    "laserPwm": 20,
+    "laserGate": -1,
+    "xLimit": 14,
+    "yLimit": 15,
+    "estop": 16,
+    "lidInterlock": 17
+  },
+  "motion": {
+    "stepPulseUs": 4,
+    "dirSetupUs": 5,
+    "dirHoldUs": 5,
+    "invertEnable": true
+  },
+  "xAxis": {
+    "stepsPerMm": 160.0,
+    "maxRateMmMin": 4000.0,
+    "accelerationMmS2": 300.0,
+    "invertDirPrimary": true,
+    "invertDirSecondary": false,
+    "dualMotor": false,
+    "secondaryUsesSeparateDriver": false,
+    "travelMm": 180.0
+  },
+  "yAxis": {
+    "stepsPerMm": 160.0,
+    "maxRateMmMin": 6000.0,
+    "accelerationMmS2": 400.0,
+    "invertDirPrimary": true,
+    "invertDirSecondary": true,
+    "dualMotor": true,
+    "secondaryUsesSeparateDriver": false,
+    "travelMm": 130.0
+  },
+  "laser": {
+    "pwmFreqHz": 20000,
+    "pwmResolutionBits": 8,
+    "pwmMin": 0,
+    "pwmMax": 255,
+    "activeHigh": true,
+    "gateActiveHigh": true
+  },
+  "safety": {
+    "homingEnabled": false,
+    "requireHomingBeforeRun": true,
+    "stopLaserOnPause": true,
+    "stopLaserOnAlarm": true,
+    "limitInputsPullup": true,
+    "estopPullup": true,
+    "lidInterlockPullup": true,
+    "xLimitActiveLow": true,
+    "yLimitActiveLow": true,
+    "estopActiveLow": true,
+    "lidInterlockActiveLow": true
+  },
+  "network": {
+    "hostname": "lasergraver",
+    "apSsid": "LaserGraver-Setup",
+    "apPassword": "change-me",
+    "staEnabled": false,
+    "staSsid": "",
+    "staPassword": "",
+    "apChannel": 6,
+    "apMaxConnections": 4
+  }
+}

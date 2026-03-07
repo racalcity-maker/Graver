@@ -1,0 +1,30 @@
+body { margin: 0; font-family: "Segoe UI", sans-serif; background: #eef1e6; color: #1f2a1f; }
+.shell { max-width: 980px; margin: 0 auto; padding: 20px; }
+.hero { background: linear-gradient(135deg, #1d4f3f, #2f7a62); color: #f8fbf5; border-radius: 20px; padding: 24px; }
+.tabbar { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
+.tabbar button, .btn { border: 0; border-radius: 999px; padding: 10px 16px; background: #dfe8da; cursor: pointer; font-weight: 600; }
+.tabbar button.active, .btn { background: #205b47; color: #fff; }
+.btn.alt { background: #d8a228; color: #241a05; }
+.btn.danger { background: #9b2c2c; }
+.panel { background: #fffdf8; border: 1px solid #d7dccd; border-radius: 18px; padding: 18px; margin-bottom: 16px; }
+.soft-panel { background: #f8faf4; }
+.hidden { display: none; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.status-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.status-card { background: #f6f8f2; border-radius: 12px; padding: 12px; border: 1px solid #e1e6d8; }
+.label { display: block; font-size: 12px; text-transform: uppercase; color: #5d6b5d; margin-bottom: 6px; }
+.hint { display: block; margin-top: 6px; font-size: 12px; line-height: 1.35; color: #677567; }
+.value { font-size: 20px; font-weight: 700; }
+.controls, .inline { display: flex; flex-wrap: wrap; gap: 10px; }
+.inline > label { flex: 1 1 180px; min-width: 0; }
+.inline.actions { align-items: end; }
+.inline.actions button { flex: 0 0 auto; }
+input, select, textarea, pre { width: 100%; border: 1px solid #d7dccd; background: #fbfcf8; border-radius: 12px; padding: 10px 12px; color: #1f2a1f; font: inherit; box-sizing: border-box; }
+textarea, pre { min-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.log { min-height: 110px; background: #17211c; color: #e8f5ea; border-radius: 14px; padding: 12px; font-family: Consolas, monospace; white-space: pre-wrap; }
+.preview-canvas { width: 100%; height: auto; min-height: 240px; border: 1px solid #d7dccd; border-radius: 14px; background: #f6f8f2; image-rendering: pixelated; image-rendering: crisp-edges; }
+.progress-track { width: 100%; height: 16px; border-radius: 999px; background: #e3e8dd; overflow: hidden; border: 1px solid #d1d8c7; }
+.progress-fill { height: 100%; background: linear-gradient(90deg, #d8a228, #205b47); transition: width 0.2s ease; }
+.source-switch { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.source-chip { border: 1px solid #ccd4c1; border-radius: 14px; background: #f6f8f2; color: #294236; padding: 14px 12px; font: inherit; font-weight: 700; cursor: pointer; }
+.source-chip.active { background: #205b47; color: #fff; border-color: #205b47; }

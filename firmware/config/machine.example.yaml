@@ -1,0 +1,85 @@
+board:
+  name: lasergraver-v1
+  mcu: esp32s3-r8n16
+
+pins:
+  x_step: 8
+  x_dir: 9
+  x_secondary_step: -1
+  x_secondary_dir: -1
+
+  y_step: 4
+  y_dir: 5
+  y_secondary_step: 6
+  y_secondary_dir: 7
+
+  motors_enable: 10
+  laser_pwm: 20
+  laser_gate: -1
+
+  x_limit: 14
+  y_limit: 15
+  estop: 16
+  lid_interlock: 17
+
+motion:
+  stepPulseUs: 4
+  dirSetupUs: 5
+  dirHoldUs: 5
+  invertEnable: true
+
+axes:
+  x:
+    stepsPerMm: 160.0
+    maxRateMmMin: 4000
+    accelerationMmS2: 300
+    invertDirPrimary: true
+    invertDirSecondary: false
+    dualMotor: false
+    secondaryUsesSeparateDriver: false
+    travelMm: 180
+  y:
+    stepsPerMm: 160.0
+    maxRateMmMin: 6000
+    accelerationMmS2: 400
+    invertDirPrimary: true
+    invertDirSecondary: true
+    dualMotor: true
+    secondaryUsesSeparateDriver: false
+    travelMm: 130
+
+laser:
+  pwmFreqHz: 20000
+  pwmResolutionBits: 8
+  pwmMin: 0
+  pwmMax: 255
+  activeHigh: true
+  gateActiveHigh: true
+
+network:
+  hostname: lasergraver
+  apSsid: LaserGraver-Setup
+  apPassword: change-me
+  staEnabled: false
+  staSsid: ""
+  staPassword: ""
+  apChannel: 6
+  apMaxConnections: 4
+
+safety:
+  homingEnabled: false
+  requireHomingBeforeRun: true
+  stopLaserOnPause: true
+  stopLaserOnAlarm: true
+  limitInputsPullup: true
+  estopPullup: true
+  lidInterlockPullup: true
+  xLimitActiveLow: true
+  yLimitActiveLow: true
+  estopActiveLow: true
+  lidInterlockActiveLow: true
+
+storage:
+  jobsPath: /jobs
+  maxJobs: 20
+  maxUploadSizeBytes: 4194304

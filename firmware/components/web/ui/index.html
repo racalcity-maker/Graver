@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LaserGraver</title>
+  <link rel="stylesheet" href="/assets/styles.css?v=20260304e">
+</head>
+<body data-home-action="__HOME_ACTION__">
+  <div class="shell">
+    <section class="hero">
+      <h1>LaserGraver</h1>
+      <p>Bring-up console for motion, upload, jobs, and runtime settings.</p>
+    </section>
+
+    <nav class="tabbar">
+      <button class="active" data-tab="status">Status</button>
+      <button data-tab="control">Control</button>
+      <button data-tab="upload">Upload</button>
+      <button data-tab="jobs">Jobs</button>
+      <button data-tab="settings">Settings</button>
+    </nav>
+
+    <section id="tab-status" class="panel">
+      <h2>Machine Status</h2>
+      <div class="controls" style="margin-bottom:14px">
+        <button class="btn" id="refresh-status">Refresh</button>
+        <button class="btn alt" id="home-btn">__HOME_LABEL__</button>
+        <button class="btn alt" id="go-zero-btn">Go To Zero</button>
+        <button class="btn alt" id="move-to-btn">Move To</button>
+        <button class="btn alt" id="frame-btn">Frame</button>
+        <button class="btn danger" id="stop-btn">Stop</button>
+      </div>
+      <div class="status-grid">
+        <div class="status-card"><span class="label">State</span><span class="value" id="status-state">-</span></div>
+        <div class="status-card"><span class="label">Motion</span><span class="value" id="status-motion">-</span></div>
+        <div class="status-card"><span class="label">X</span><span class="value" id="status-x">0.000</span></div>
+        <div class="status-card"><span class="label">Y</span><span class="value" id="status-y">0.000</span></div>
+        <div class="status-card"><span class="label">Homed</span><span class="value" id="status-homed">false</span></div>
+        <div class="status-card"><span class="label">Motors Held</span><span class="value" id="status-motors">true</span></div>
+        <div class="status-card"><span class="label">Laser Armed</span><span class="value" id="status-laser">false</span></div>
+        <div class="status-card"><span class="label">Network</span><span class="value" id="status-network">ap</span></div>
+        <div class="status-card"><span class="label">IP</span><span class="value" id="status-ip">192.168.4.1</span></div>
+      </div>
+      <p><strong>Message:</strong> <span id="status-message">-</span></p>
+      <p><strong>Active Job:</strong> <span id="status-job">-</span></p>
+      <div class="panel">
+        <h3>Job Progress</h3>
+        <div class="progress-track"><div id="job-progress-fill" class="progress-fill" style="width:0%"></div></div>
+        <p id="job-progress-text">0% (0 / 0 units)</p>
+      </div>
+    </section>
+
+    <section id="tab-control" class="panel hidden">
+      <h2>Bring-up Controls</h2>
+      <div class="grid">
+        <div class="panel">
+          <h3>Motor Test</h3>
+          <div class="controls" style="margin-bottom:12px">
+            <button class="btn alt" type="button" id="release-motors-btn">Release Motors</button>
+            <button class="btn" type="button" id="hold-motors-btn">Hold Motors</button>
+          </div>
+          <form method="get" action="/api/diag/jog-button" target="cmd-frame">
+            <div class="inline">
+              <label>
+                <span class="label">Step mm</span>
+                <select name="distanceMm">
+                  <option value="0.5">0.5</option>
+                  <option value="1">1</option>
+                  <option value="2" selected>2</option>
+                  <option value="5">5</option>
+                  <option value="10">10</option>
+                </select>
+              </label>
+              <label>
+                <span class="label">Feed mm/min</span>
+                <input name="feedMmMin" type="number" value="120" step="10">
+              </label>
+            </div>
+            <div class="controls" style="margin-top:12px">
+              <button class="btn alt" type="submit" name="cmd" value="x-">X-</button>
+              <button class="btn" type="submit" name="cmd" value="x+">X+</button>
+              <button class="btn alt" type="submit" name="cmd" value="y-">Y-</button>
+              <button class="btn" type="submit" name="cmd" value="y+">Y+</button>
+            </div>
+          </form>
+        </div>
+        <div class="panel">
+          <h3>Laser Test</h3>
+          <div class="inline">
+            <label>
+              <span class="label">Power</span>
+              <input id="laser-power" type="number" value="10" min="1" max="255">
+            </label>
+            <label>
+              <span class="label">Duration ms</span>
+              <input id="laser-duration" type="number" value="50" min="1" step="10">
+            </label>
+          </div>
+          <div class="controls" style="margin-top:12px">
+            <button class="btn danger" id="laser-pulse">Pulse Laser</button>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Move To XY</h3>
+        <div class="inline">
+          <label>
+            <span class="label">X mm</span>
+            <input id="move-to-x" type="number" value="0" step="0.5">
+          </label>
+          <label>
+            <span class="label">Y mm</span>
+            <input id="move-to-y" type="number" value="0" step="0.5">
+          </label>
+          <label>
+            <span class="label">Feed mm/min</span>
+            <input id="move-to-feed" type="number" value="300" step="10">
+          </label>
+        </div>
+        <div class="inline actions" style="margin-top:12px">
+          <button class="btn alt" type="button" id="move-to-run-btn">Go</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Command Log</h3>
+        <div id="command-log" class="log">UI ready.</div>
+      </div>
+    </section>
+
+    <section id="tab-upload" class="panel hidden">
+      <h2>Upload</h2>
+      <div class="grid">
+        <div class="panel">
+          <h3>Source Type</h3>
+          <div class="source-switch" id="upload-source-switch">
+            <button type="button" class="source-chip active" data-source-type="image">Image</button>
+            <button type="button" class="source-chip" data-source-type="text">Text</button>
+            <button type="button" class="source-chip" data-source-type="primitive">Primitive</button>
+          </div>
+
+          <div class="panel soft-panel">
+            <h3>Job</h3>
+            <div class="inline">
+              <label>
+                <span class="label">Job ID</span>
+                <input id="upload-job-id" type="text" value="demo-001">
+                <span class="hint">Short job name that will be saved on the controller.</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="panel soft-panel">
+            <h3>Output</h3>
+            <div class="inline">
+              <label>
+                <span class="label">DPI</span>
+                <input id="upload-dpi" type="number" value="254" min="50" step="1">
+                <span class="hint">Lower is faster, higher is more detailed.</span>
+              </label>
+              <label>
+                <span class="label">Print mm/min</span>
+                <input id="upload-print-speed" type="number" value="1200" min="1" step="50">
+                <span class="hint">Speed while the laser is actively marking.</span>
+              </label>
+              <label>
+                <span class="label">Travel mm/min</span>
+                <input id="upload-travel-speed" type="number" value="2400" min="1" step="50">
+                <span class="hint">Speed for repositioning with the laser off.</span>
+              </label>
+            </div>
+            <div class="inline">
+              <label>
+                <span class="label">Min Power</span>
+                <input id="upload-min-power" type="number" value="0" min="0" max="255">
+                <span class="hint">Usually keep 0 for full off between dark areas.</span>
+              </label>
+              <label>
+                <span class="label">Max Power</span>
+                <input id="upload-max-power" type="number" value="255" min="0" max="255">
+                <span class="hint">Laser power ceiling in range 0..255.</span>
+              </label>
+              <label>
+                <span class="label">Overscan mm</span>
+                <input id="upload-overscan" type="number" value="0" min="0" step="0.5">
+                <span class="hint">Extra travel before and after raster lines.</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="image-controls" class="panel soft-panel">
+            <h3>Image</h3>
+            <div class="inline">
+              <label>
+                <span class="label">Image</span>
+                <input id="upload-image" type="file" accept="image/*">
+                <span class="hint">Pick an image from the phone or computer.</span>
+              </label>
+            </div>
+            <div class="inline">
+              <label>
+                <span class="label">Tone Mode</span>
+                <select id="image-tone-mode">
+                  <option value="binary" selected>Binary</option>
+                  <option value="grayscale">Grayscale</option>
+                  <option value="dither">Dither</option>
+                </select>
+                <span class="hint">Binary keeps one fixed power. Dither is usually better for cardboard and paper.</span>
+              </label>
+              <label>
+                <span class="label">Width mm</span>
+                <input id="upload-width-mm" type="number" value="30" min="1" step="1">
+                <span class="hint">Final physical width on the material.</span>
+              </label>
+              <label>
+                <span class="label">Height mm</span>
+                <input id="upload-height-mm" type="number" value="30" min="1" step="1">
+                <span class="hint">Final physical height on the material.</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="primitive-controls" class="panel soft-panel hidden">
+            <h3>Primitive</h3>
+            <div class="inline">
+              <label>
+                <span class="label">Shape</span>
+                <select id="primitive-shape">
+                  <option value="star">Star</option>
+                  <option value="square">Square</option>
+                  <option value="circle">Circle</option>
+                  <option value="oval">Oval</option>
+                  <option value="triangle">Triangle</option>
+                  <option value="octagon">Octagon</option>
+                  <option value="diamond">Diamond</option>
+                </select>
+                <span class="hint">Select the figure to generate.</span>
+              </label>
+              <label>
+                <span class="label">Render Mode</span>
+                <select id="primitive-render-mode">
+                  <option value="vector-outline" selected>Vector Outline</option>
+                  <option value="raster-fill">Raster Fill</option>
+                </select>
+                <span class="hint">Vector is faster for contours, raster is for fill.</span>
+              </label>
+            </div>
+            <div class="inline">
+              <label>
+                <span class="label">Shape Width mm</span>
+                <input id="primitive-width-mm" type="number" value="20" min="1" step="1">
+                <span class="hint">Physical width of the primitive.</span>
+              </label>
+              <label>
+                <span class="label">Shape Height mm</span>
+                <input id="primitive-height-mm" type="number" value="20" min="1" step="1">
+                <span class="hint">Physical height of the primitive.</span>
+              </label>
+              <label>
+                <span class="label">Stroke mm</span>
+                <input id="primitive-stroke-mm" type="number" value="1" min="0.1" step="0.1">
+                <span class="hint">Contour thickness or shell spacing for vector mode.</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="text-controls" class="panel soft-panel hidden">
+            <h3>Text</h3>
+            <div class="inline">
+              <label>
+                <span class="label">Text</span>
+                <textarea id="text-value" rows="4">HELLO</textarea>
+                <span class="hint">Wrapped automatically inside the text box.</span>
+              </label>
+            </div>
+            <div class="inline">
+              <label>
+                <span class="label">Text Box Width mm</span>
+                <input id="text-width-mm" type="number" value="40" min="1" step="1">
+                <span class="hint">Width of the text placement area.</span>
+              </label>
+              <label>
+                <span class="label">Text Box Height mm</span>
+                <input id="text-height-mm" type="number" value="20" min="1" step="1">
+                <span class="hint">Height of the text placement area.</span>
+              </label>
+            </div>
+            <div class="inline">
+              <label>
+                <span class="label">Render Mode</span>
+                <select id="text-render-mode">
+                  <option value="vector" selected>Fast Vector</option>
+                  <option value="raster">Raster Quality</option>
+                </select>
+                <span class="hint">Vector is faster. Raster uses browser fonts and is slower.</span>
+              </label>
+              <label>
+                <span class="label">Vector Font</span>
+                <select id="text-vector-font-family">
+                  <option value="sans" selected>Simple Sans</option>
+                </select>
+                <span class="hint">Single-line sans font for fast marking.</span>
+              </label>
+              <label>
+                <span class="label">Vector Fill Mode</span>
+                <select id="text-vector-mode">
+                  <option value="outline" selected>Outline</option>
+                  <option value="filled">Filled</option>
+                </select>
+                <span class="hint">Outline is lighter. Filled uses vector hatch inside letters.</span>
+              </label>
+              <label id="text-raster-font-family-wrap" class="hidden">
+                <span class="label">Raster Font</span>
+                <select id="text-font-family">
+                  <option value="arial" selected>Arial</option>
+                  <option value="calibri">Calibri</option>
+                  <option value="verdana">Verdana</option>
+                  <option value="tahoma">Tahoma</option>
+                  <option value="trebuchet">Trebuchet MS</option>
+                  <option value="georgia">Georgia</option>
+                  <option value="times">Times New Roman</option>
+                  <option value="sans">System Sans</option>
+                  <option value="mono">Monospace</option>
+                </select>
+                <span class="hint">Rendered in the browser, then sent as raster.</span>
+              </label>
+              <label>
+                <span class="label">Font Size mm</span>
+                <input id="text-font-size-mm" type="number" value="3" min="0.5" step="0.5">
+                <span class="hint">Approximate text height in millimeters.</span>
+              </label>
+              <label>
+                <span class="label">Align</span>
+                <select id="text-align">
+                  <option value="left">Left</option>
+                  <option value="center" selected>Center</option>
+                  <option value="right">Right</option>
+                </select>
+                <span class="hint">Horizontal alignment inside the text box.</span>
+              </label>
+            </div>
+            <div class="inline">
+              <label>
+                <span class="label">Line Spacing</span>
+                <input id="text-line-spacing" type="number" value="1.4" min="0.8" step="0.1">
+                <span class="hint">Multiplier for distance between lines.</span>
+              </label>
+              <label>
+                <span class="label">Letter Spacing</span>
+                <input id="text-letter-spacing" type="number" value="0.2" min="0" step="0.1">
+                <span class="hint">Extra spacing between characters in millimeters.</span>
+              </label>
+              <label>
+                <span class="label">Stroke mm</span>
+                <input id="text-stroke-mm" type="number" value="0.6" min="0.1" step="0.1">
+                <span class="hint">Reserved for future outline modes. Ignored for raster text.</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="inline actions" style="margin-top:12px">
+            <button class="btn" type="button" id="upload-preview-btn">Generate Preview</button>
+            <button class="btn alt" type="button" id="upload-send-btn">Upload Job</button>
+            <button class="btn danger" type="button" id="upload-reset-current-btn">Reset Current</button>
+            <button class="btn danger" type="button" id="upload-reset-all-btn">Reset All</button>
+          </div>
+          <p id="upload-meta">No image loaded.</p>
+        </div>
+        <div class="panel">
+          <h3>Preview</h3>
+          <canvas id="upload-preview" class="preview-canvas" width="320" height="240"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-jobs" class="panel hidden">
+      <h2>Jobs</h2>
+      <div class="controls" style="margin-bottom:12px">
+        <button class="btn" id="refresh-jobs">Refresh Jobs</button>
+      </div>
+      <div class="panel">
+        <h3>Run Raster Job</h3>
+        <div class="inline">
+          <label>
+            <span class="label">Job ID</span>
+            <input id="run-job-id" type="text" placeholder="demo-001">
+          </label>
+        </div>
+        <div class="inline actions" style="margin-top:12px">
+          <button class="btn alt" type="button" id="run-job-btn">Run Job</button>
+          <button class="btn" type="button" id="pause-job-btn">Pause</button>
+          <button class="btn" type="button" id="resume-job-btn">Resume</button>
+          <button class="btn danger" type="button" id="abort-job-btn">Abort</button>
+        </div>
+        <div style="margin-top:12px">
+          <div class="progress-track"><div id="jobs-progress-fill" class="progress-fill" style="width:0%"></div></div>
+          <p id="jobs-progress-text">0% (0 / 0 units)</p>
+        </div>
+      </div>
+      <pre id="jobs-list">{"items":[]}</pre>
+    </section>
+
+    <section id="tab-settings" class="panel hidden">
+      <h2>Runtime Settings</h2>
+      <div class="panel">
+        <h3>Wi-Fi</h3>
+        <div class="inline">
+          <label>
+            <span class="label">SSID</span>
+            <input id="wifi-ssid" type="text" placeholder="Home Wi-Fi">
+          </label>
+          <label>
+            <span class="label">Password</span>
+            <input id="wifi-password" type="password" placeholder="Password">
+          </label>
+        </div>
+        <div class="inline actions" style="margin-top:12px">
+          <button class="btn" id="wifi-connect-btn" type="button">Connect Wi-Fi</button>
+        </div>
+        <p id="wifi-connect-status">Saved Wi-Fi is tried first. If it fails, SoftAP stays active.</p>
+      </div>
+      <div class="controls" style="margin-bottom:12px">
+        <button class="btn" id="load-settings">Load Settings</button>
+      </div>
+      <textarea id="settings-json" spellcheck="false"></textarea>
+    </section>
+  </div>
+  <iframe name="cmd-frame" style="display:none"></iframe>
+  <script type="module" src="/assets/app.js?v=20260304e"></script>
+</body>
+</html>

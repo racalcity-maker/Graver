@@ -1,0 +1,255 @@
+menu "LaserGraver"
+
+    menu "GPIO Pins"
+        config LASERGRAVER_PIN_X_STEP
+            int "X STEP GPIO"
+            default 8
+
+        config LASERGRAVER_PIN_X_DIR
+            int "X DIR GPIO"
+            default 9
+
+        config LASERGRAVER_PIN_X_SECONDARY_STEP
+            int "X secondary STEP GPIO"
+            default -1
+
+        config LASERGRAVER_PIN_X_SECONDARY_DIR
+            int "X secondary DIR GPIO"
+            default -1
+
+        config LASERGRAVER_PIN_Y_STEP
+            int "Y STEP GPIO"
+            default 4
+
+        config LASERGRAVER_PIN_Y_DIR
+            int "Y DIR GPIO"
+            default 5
+
+        config LASERGRAVER_PIN_Y_SECONDARY_STEP
+            int "Y secondary STEP GPIO"
+            default 6
+
+        config LASERGRAVER_PIN_Y_SECONDARY_DIR
+            int "Y secondary DIR GPIO"
+            default 7
+
+        config LASERGRAVER_X_SECONDARY_SEPARATE_DRIVER
+            bool "X second motor uses separate driver"
+            default n
+
+        config LASERGRAVER_Y_SECONDARY_SEPARATE_DRIVER
+            bool "Y second motor uses separate driver"
+            default n
+
+        config LASERGRAVER_PIN_MOTORS_ENABLE
+            int "Motors ENABLE GPIO"
+            default 10
+
+        config LASERGRAVER_PIN_LASER_PWM
+            int "Laser PWM GPIO"
+            default 20
+
+        config LASERGRAVER_PIN_LASER_GATE
+            int "Laser gate GPIO"
+            default -1
+
+        config LASERGRAVER_PIN_X_LIMIT
+            int "X limit GPIO"
+            default 14
+
+        config LASERGRAVER_PIN_Y_LIMIT
+            int "Y limit GPIO"
+            default 15
+
+        config LASERGRAVER_PIN_ESTOP
+            int "E-stop GPIO"
+            default 16
+
+        config LASERGRAVER_PIN_LID_INTERLOCK
+            int "Lid interlock GPIO"
+            default 17
+    endmenu
+
+    menu "Motion Defaults"
+        config LASERGRAVER_STEP_PULSE_US
+            int "STEP pulse width, us"
+            default 4
+
+        config LASERGRAVER_DIR_SETUP_US
+            int "DIR setup time, us"
+            default 5
+
+        config LASERGRAVER_DIR_HOLD_US
+            int "DIR hold time, us"
+            default 5
+
+        config LASERGRAVER_INVERT_MOTOR_ENABLE
+            bool "Invert motor enable pin"
+            default y
+
+        config LASERGRAVER_X_STEPS_PER_MM
+            int "X steps/mm"
+            default 160
+
+        config LASERGRAVER_X_MAX_RATE_MM_MIN
+            int "X max rate, mm/min"
+            default 4000
+
+        config LASERGRAVER_X_ACCEL_MM_S2
+            int "X acceleration, mm/s^2"
+            default 300
+
+        config LASERGRAVER_X_INVERT_DIR_PRIMARY
+            bool "Invert X primary direction"
+            default y
+
+        config LASERGRAVER_X_INVERT_DIR_SECONDARY
+            bool "Invert X secondary direction"
+            default n
+
+        config LASERGRAVER_X_DUAL_MOTOR
+            bool "X axis uses two motors"
+            default n
+
+        config LASERGRAVER_X_TRAVEL_MM
+            int "X travel, mm"
+            default 180
+
+        config LASERGRAVER_Y_STEPS_PER_MM
+            int "Y steps/mm"
+            default 160
+
+        config LASERGRAVER_Y_MAX_RATE_MM_MIN
+            int "Y max rate, mm/min"
+            default 6000
+
+        config LASERGRAVER_Y_ACCEL_MM_S2
+            int "Y acceleration, mm/s^2"
+            default 400
+
+        config LASERGRAVER_Y_INVERT_DIR_PRIMARY
+            bool "Invert Y primary direction"
+            default y
+
+        config LASERGRAVER_Y_INVERT_DIR_SECONDARY
+            bool "Invert Y secondary direction"
+            default y
+
+        config LASERGRAVER_Y_DUAL_MOTOR
+            bool "Y axis uses two motors"
+            default y
+
+        config LASERGRAVER_Y_TRAVEL_MM
+            int "Y travel, mm"
+            default 130
+    endmenu
+
+    menu "Laser Defaults"
+        config LASERGRAVER_LASER_PWM_FREQ_HZ
+            int "Laser PWM frequency, Hz"
+            default 20000
+
+        config LASERGRAVER_LASER_PWM_RESOLUTION_BITS
+            int "Laser PWM resolution, bits"
+            default 8
+
+        config LASERGRAVER_LASER_PWM_MIN
+            int "Laser minimum power"
+            default 0
+
+        config LASERGRAVER_LASER_PWM_MAX
+            int "Laser maximum power"
+            default 255
+
+        config LASERGRAVER_LASER_ACTIVE_HIGH
+            bool "Laser PWM active high"
+            default y
+
+        config LASERGRAVER_LASER_GATE_ACTIVE_HIGH
+            bool "Laser gate active high"
+            default y
+    endmenu
+
+    menu "Network Defaults"
+        config LASERGRAVER_HOSTNAME
+            string "Device hostname"
+            default "lasergraver"
+
+        config LASERGRAVER_AP_SSID
+            string "SoftAP SSID"
+            default "LaserGraver-Setup"
+
+        config LASERGRAVER_AP_PASSWORD
+            string "SoftAP password"
+            default "change-me"
+
+        config LASERGRAVER_AP_CHANNEL
+            int "SoftAP channel"
+            range 1 13
+            default 6
+
+        config LASERGRAVER_AP_MAX_CONNECTIONS
+            int "SoftAP max clients"
+            range 1 10
+            default 4
+
+        config LASERGRAVER_STA_ENABLED
+            bool "Enable STA mode later in config"
+            default n
+
+        config LASERGRAVER_STA_SSID
+            string "Saved STA SSID"
+            default ""
+
+        config LASERGRAVER_STA_PASSWORD
+            string "Saved STA password"
+            default ""
+    endmenu
+
+    menu "Safety Defaults"
+        config LASERGRAVER_HOMING_ENABLED
+            bool "Enable homing with limit switches"
+            default n
+
+        config LASERGRAVER_REQUIRE_HOMING_BEFORE_RUN
+            bool "Require homing before run"
+            default y
+
+        config LASERGRAVER_STOP_LASER_ON_PAUSE
+            bool "Force laser off on pause"
+            default y
+
+        config LASERGRAVER_STOP_LASER_ON_ALARM
+            bool "Force laser off on alarm"
+            default y
+
+        config LASERGRAVER_LIMIT_INPUTS_PULLUP
+            bool "Enable pull-up on X/Y limit inputs"
+            default y
+
+        config LASERGRAVER_ESTOP_INPUT_PULLUP
+            bool "Enable pull-up on E-stop input"
+            default y
+
+        config LASERGRAVER_LID_INTERLOCK_INPUT_PULLUP
+            bool "Enable pull-up on lid interlock input"
+            default y
+
+        config LASERGRAVER_X_LIMIT_ACTIVE_LOW
+            bool "X limit switch active low"
+            default y
+
+        config LASERGRAVER_Y_LIMIT_ACTIVE_LOW
+            bool "Y limit switch active low"
+            default y
+
+        config LASERGRAVER_ESTOP_ACTIVE_LOW
+            bool "E-stop input active low"
+            default y
+
+        config LASERGRAVER_LID_INTERLOCK_ACTIVE_LOW
+            bool "Lid interlock input active low"
+            default y
+    endmenu
+
+endmenu
