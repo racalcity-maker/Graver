@@ -32,6 +32,7 @@ Main sections:
 - `Laser Defaults`
 - `Network Defaults`
 - `Safety Defaults`
+- `GRBL Compatibility`
 
 Important: values from `/spiffs/config/machine.json` override these compile-time defaults after boot.
 
@@ -83,6 +84,7 @@ Default axis layout:
 - `jobs`: job metadata and execution inputs
 - `storage`: SPIFFS, machine config, job files
 - `web`: HTTP API and future web assets
+- `grbl`: serial GRBL-compat protocol adapter
 - `app`: service wiring and startup sequence
 
 ## Engineering Rules
@@ -91,3 +93,15 @@ Default axis layout:
 - Web handlers must not drive GPIO directly.
 - UI commands should go through `machine` or dedicated services.
 - Motion code should stay independent from HTTP and JSON.
+
+## GRBL Compatibility (MVP)
+
+- Enable/disable in `menuconfig -> LaserGraver -> GRBL Compatibility`.
+- Firmware exposes a serial GRBL-compatible endpoint with:
+  - banner `Grbl 1.1f ['$' for help]`
+  - `ok` / `error:n`
+  - realtime `?`, `!`, `~`, `Ctrl-X`
+  - `$` commands: `$$`, `$I`, `$G`, `$X`, `$H`
+  - G-code: `G0`, `G1`, `G4`, `G20`, `G21`, `G90`, `G91`, `G92(X0 Y0)`
+  - spindle words: `M3`, `M4`, `M5`, `S`
+- Current limitation: live laser power synchronized with streamed `G1` is not implemented yet; motion runs as dry move for streamed G-code.

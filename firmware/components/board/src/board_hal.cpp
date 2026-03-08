@@ -17,7 +17,7 @@ constexpr const char *kTag = "hal";
 constexpr uint32_t kRmtResolutionHz = 1000000;
 constexpr size_t kRmtMemBlockSymbols = 64;
 constexpr size_t kRmtChunkSteps = 128;
-constexpr int kRmtWaitMarginMs = 2;
+constexpr int kRmtWaitMarginMs = 20;
 constexpr uint32_t kSafetyChunkBudgetUs = 2000;
 constexpr uint32_t kRmtMaxDurationUs = 32767;
 
@@ -488,11 +488,19 @@ esp_err_t BoardHal::waitForAxisTransmission(AxisRmtResources &axis, const bool u
   const uint64_t expected_us = static_cast<uint64_t>(chunkSteps) * static_cast<uint64_t>(stepDelayUs);
   const int timeout_ms = static_cast<int>((expected_us + 999ULL) / 1000ULL) + kRmtWaitMarginMs;
 
-  ESP_RETURN_ON_ERROR(rmt_tx_wait_all_done(axis.primaryChannel, timeout_ms), kTag,
-                      "Primary RMT transmission timeout");
+  esp_err_t err = rmt_tx_wait_all_done(axis.primaryChannel, timeout_ms);
+  if (err != ESP_OK) {
+    (void)abortAxisTransmission(axis, useSecondary);
+    ESP_LOGE(kTag, "Primary RMT transmission timeout");
+    return err;
+  }
   if (useSecondary && axis.secondaryChannel != nullptr) {
-    ESP_RETURN_ON_ERROR(rmt_tx_wait_all_done(axis.secondaryChannel, timeout_ms), kTag,
-                        "Secondary RMT transmission timeout");
+    err = rmt_tx_wait_all_done(axis.secondaryChannel, timeout_ms);
+    if (err != ESP_OK) {
+      (void)abortAxisTransmission(axis, useSecondary);
+      ESP_LOGE(kTag, "Secondary RMT transmission timeout");
+      return err;
+    }
   }
 
   if (useSecondary && axis.syncManager != nullptr) {

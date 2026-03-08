@@ -634,10 +634,22 @@ void ControlService::jobLoop(jobs::LoadedJob job) {
   finished.completedUnits = completed_units;
   finished.jobId[0] = '\0';
   if (commandQueue_ != nullptr) {
-    while (xQueueSend(commandQueue_, &finished, pdMS_TO_TICKS(100)) != pdPASS) {
+    constexpr int kMaxFinishSendRetries = 20;
+    bool sent = false;
+    for (int retry = 0; retry < kMaxFinishSendRetries; ++retry) {
+      if (xQueueSend(commandQueue_, &finished, pdMS_TO_TICKS(10)) == pdPASS) {
+        sent = true;
+        break;
+      }
       vTaskDelay(pdMS_TO_TICKS(10));
     }
-  } else {
+    if (sent) {
+      return;
+    }
+    ESP_LOGE(kTag, "Failed to enqueue JobFinished after retries");
+  }
+
+  {
     lockState();
     jobTask_ = nullptr;
     activeJobId_.clear();

@@ -252,4 +252,20 @@ menu "LaserGraver"
             default y
     endmenu
 
+    menu "GRBL Compatibility"
+        config LASERGRAVER_GRBL_ENABLED
+            bool "Enable GRBL serial compatibility service"
+            default y
+
+        config LASERGRAVER_GRBL_RX_LINE_MAX
+            int "GRBL max input line length"
+            range 64 1024
+            default 256
+
+        config LASERGRAVER_GRBL_TASK_STACK
+            int "GRBL task stack size"
+            range 2048 12288
+            default 4096
+    endmenu
+
 endmenu

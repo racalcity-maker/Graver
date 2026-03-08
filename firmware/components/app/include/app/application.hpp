@@ -1,6 +1,7 @@
 #pragma once
 
 #include "control/control_service.hpp"
+#include "grbl/grbl_service.hpp"
 #include "hal/board_hal.hpp"
 #include "jobs/job_manager.hpp"
 #include "laser/laser_service.hpp"
@@ -34,6 +35,7 @@ class Application {
   std::unique_ptr<motion::MotionService> motion_;
   std::unique_ptr<laser::LaserService> laser_;
   std::unique_ptr<control::ControlService> control_;
+  std::unique_ptr<grbl::GrblService> grbl_;
   std::unique_ptr<web::WebServer> web_;
 };
 

@@ -35,6 +35,7 @@ Application::Application()
       motion_(nullptr),
       laser_(nullptr),
       control_(nullptr),
+      grbl_(nullptr),
       web_(nullptr) {}
 
 esp_err_t Application::start() {
@@ -48,6 +49,7 @@ esp_err_t Application::start() {
   motion_ = std::make_unique<motion::MotionService>(config_, boardHal_);
   laser_ = std::make_unique<laser::LaserService>(config_, boardHal_);
   control_ = std::make_unique<control::ControlService>(config_, *motion_, *laser_, *jobs_);
+  grbl_ = std::make_unique<grbl::GrblService>(config_, *control_);
   web_ = std::make_unique<web::WebServer>(*control_, *jobs_, storage_, *network_, config_);
 
   ESP_RETURN_ON_ERROR(network_->start(), kTag, "Failed to start network");
@@ -55,6 +57,7 @@ esp_err_t Application::start() {
   ESP_RETURN_ON_ERROR(motion_->start(), kTag, "Failed to start motion");
   ESP_RETURN_ON_ERROR(laser_->start(), kTag, "Failed to start laser");
   ESP_RETURN_ON_ERROR(control_->start(), kTag, "Failed to start control service");
+  ESP_RETURN_ON_ERROR(grbl_->start(), kTag, "Failed to start GRBL service");
   ESP_RETURN_ON_ERROR(web_->start(), kTag, "Failed to start web server");
 
   ESP_LOGI(kTag, "Application started");

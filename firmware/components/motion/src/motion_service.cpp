@@ -5,6 +5,7 @@
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/semphr.h"
 
 #include <algorithm>
 #include <cmath>
@@ -96,7 +97,7 @@ MotionService::~MotionService() {
 
 esp_err_t MotionService::start() {
   if (stateMutex_ == nullptr) {
-    stateMutex_ = xSemaphoreCreateMutex();
+    stateMutex_ = xSemaphoreCreateRecursiveMutex();
     if (stateMutex_ == nullptr) {
       return ESP_ERR_NO_MEM;
     }
@@ -817,13 +818,13 @@ esp_err_t MotionService::validateTargetPosition(const float xMm, const float yMm
 
 void MotionService::lockState() const {
   if (stateMutex_ != nullptr) {
-    xSemaphoreTake(stateMutex_, portMAX_DELAY);
+    (void)xSemaphoreTakeRecursive(stateMutex_, portMAX_DELAY);
   }
 }
 
 void MotionService::unlockState() const {
   if (stateMutex_ != nullptr) {
-    xSemaphoreGive(stateMutex_);
+    (void)xSemaphoreGiveRecursive(stateMutex_);
   }
 }
 
