@@ -1,67 +1,82 @@
 # LaserGraver (ESP32-S3)
 
-Custom firmware and web UI for a DIY laser engraver controller based on `ESP32-S3`.
+DIY laser engraver controller firmware + web UI on `ESP32-S3` (ESP-IDF 5.3.x).
 
-This project replaces legacy Benbox/Nano control logic with:
-- ESP-IDF firmware
-- built-in web interface
-- job upload and execution pipeline
-- modular architecture (`control`, `motion`, `laser`, `jobs`, `storage`, `web`)
+Проект заменяет старую связку Benbox/Nano на модульную систему:
+- embedded firmware (`ESP-IDF`)
+- web UI для телефона/ПК
+- pipeline загрузки и запуска задач
+- отдельные слои `control / motion / laser / jobs / storage / web / grbl`
 
-## Repository Layout
+## Что уже работает
 
-```text
-docs/
-  architecture.md
-  job-format.md
+- Wi-Fi: попытка подключения к сохраненной STA сети + fallback в AP
+- Web UI: управление осями, zero/home сценарии, frame, запуск/пауза/resume/abort
+- Загрузка задач: raster image, primitives, text
+- Режимы изображения: binary, grayscale, dither (+ опции обработки)
+- Хранение задач и runtime-конфига в SPIFFS
+- Soft-limits рабочей области
+- Базовая GRBL-совместимость по serial (MVP)
 
-firmware/
-  components/
-  config/
-  main/
-  README.md
+## Что важно помнить сейчас
 
-frontend/
-  README.md
+- Это активная стадия разработки и отладки железа, не production.
+- Безопасность должна считаться неполной, пока не завершен hard emergency-stop pipeline.
+- Качество/скорость зависят от текущего motion backend и калибровки драйвера лазера.
 
-tools/
-  README.md
-```
+## Быстрый старт (firmware)
 
-## Current Capabilities
+Требования:
+- `ESP-IDF 5.3.x`
+- target: `esp32s3`
 
-- AP + STA fallback networking
-- Web UI (status, control, upload, jobs)
-- Image upload pipeline (binary / grayscale / dither)
-- Primitive generation (vector + raster modes)
-- Text generation (fast vector + raster quality)
-- Job storage in SPIFFS
-- Raster execution with row-based optimization
-- Pause / resume / abort job controls
-- Soft limits for work area
-
-## Build (Firmware)
-
-Use `ESP-IDF 5.3.x` and target `esp32s3`.
-
-PowerShell example:
+Сборка:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command ". 'C:\Espressif\frameworks\esp-idf-v5.3.3\export.ps1'; idf.py set-target esp32s3; idf.py build"
 ```
 
-See detailed firmware notes in:
-- `firmware/README.md`
+Прошивка и монитор:
 
-## Project Principles
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command ". 'C:\Espressif\frameworks\esp-idf-v5.3.3\export.ps1'; idf.py -p COMx flash monitor"
+```
 
-- Keep realtime motion logic independent from HTTP/UI code.
-- Do image preprocessing in browser, not on MCU.
-- Keep laser safe by default (`off` on startup, pause, alarm, stop).
-- Use data-driven machine config (`machine.json`) instead of hardcoding board-specific values.
+Настройка параметров платы:
 
-## Notes
+```text
+idf.py menuconfig -> LaserGraver
+```
 
-- Local runtime machine config path: `/spiffs/config/machine.json`
-- Jobs path: `/spiffs/jobs/<job-id>/`
+Детали по пинам, разделам конфигурации и слоям: `firmware/README.md`.
 
+## Конфиг и данные во flash
+
+- Runtime machine config: `/spiffs/config/machine.json`
+- Jobs: `/spiffs/jobs/<job-id>/`
+
+Если `machine.json` отсутствует, используются compile-time defaults из `menuconfig`.
+
+## Структура репозитория
+
+```text
+docs/          архитектура, формат задач
+firmware/      ESP-IDF проект
+frontend/      UI исходники и notes
+tools/         утилиты разработки
+TODO.md        актуальный технический backlog
+```
+
+## Документация
+
+- [Firmware README](C:/Users/test/Documents/Arduino/LaserGraver/firmware/README.md)
+- [Architecture](C:/Users/test/Documents/Arduino/LaserGraver/docs/architecture.md)
+- [Job Format](C:/Users/test/Documents/Arduino/LaserGraver/docs/job-format.md)
+- [TODO / Roadmap](C:/Users/test/Documents/Arduino/LaserGraver/TODO.md)
+
+## Принципы проекта
+
+- Реалтайм-движение не должно зависеть от HTTP/UI нагрузки.
+- Предобработка изображений по возможности в браузере, не на MCU.
+- Лазер по умолчанию всегда в безопасном состоянии (`off`) при старте/паузе/alarm.
+- Конфиг машины должен быть data-driven, а не захардкожен в коде.
