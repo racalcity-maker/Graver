@@ -17,8 +17,9 @@ constexpr const char *kTag = "hal";
 constexpr uint32_t kRmtResolutionHz = 1000000;
 constexpr size_t kRmtMemBlockSymbols = 64;
 constexpr size_t kRmtChunkSteps = 128;
-constexpr int kRmtWaitMarginMs = 20;
-constexpr uint32_t kLinearMoveYieldIntervalSteps = 32;
+constexpr int kRmtWaitMarginMs = 2;
+constexpr uint32_t kSafetyChunkBudgetUs = 2000;
+constexpr uint32_t kRmtMaxDurationUs = 32767;
 
 esp_err_t ConfigureOutput(const int pin, const int level) {
   if (pin < 0) {
@@ -59,7 +60,8 @@ BoardHal::BoardHal()
       copyEncoder_(nullptr),
       xAxisRmt_{},
       yAxisRmt_{},
-      stopRequested_(false) {}
+      stopRequested_(false),
+      ignoreLimitInputs_(false) {}
 
 BoardHal::~BoardHal() {
   (void)destroyAxisRmt(xAxisRmt_);
@@ -72,6 +74,7 @@ BoardHal::~BoardHal() {
 
 esp_err_t BoardHal::initialize(const shared::MachineConfig &config) {
   config_ = config;
+  ignoreLimitInputs_.store(false);
 
   ESP_RETURN_ON_ERROR(
       ConfigureOutput(config_.pins.motorsEnable, config_.motion.invertEnable ? 1 : 0), kTag,
@@ -87,9 +90,10 @@ esp_err_t BoardHal::initialize(const shared::MachineConfig &config) {
                       "Failed to set E-stop pin");
   ESP_RETURN_ON_ERROR(ConfigureInput(config_.pins.lidInterlock, config_.safety.lidInterlockPullup), kTag,
                       "Failed to set lid interlock pin");
+  ESP_RETURN_ON_ERROR(initializeRmt(), kTag, "Failed to initialize step RMT channels");
 
   initialized_ = true;
-  ESP_LOGI(kTag, "Board HAL initialized with software step engine");
+  ESP_LOGI(kTag, "Board HAL initialized with RMT step engine");
   return ESP_OK;
 }
 
@@ -116,11 +120,13 @@ esp_err_t BoardHal::setLaserGate(const bool enabled) {
 }
 
 esp_err_t BoardHal::stepXAxis(const bool positive, const uint32_t steps, const uint32_t stepDelayUs) {
-  return moveXYLinear(positive, steps, true, 0, stepDelayUs);
+  ESP_RETURN_ON_ERROR(prepareXAxisMove(positive), kTag, "Failed to prepare X move");
+  return runXAxisSteps(steps, stepDelayUs);
 }
 
 esp_err_t BoardHal::stepYAxis(const bool positive, const uint32_t steps, const uint32_t stepDelayUs) {
-  return moveXYLinear(true, 0, positive, steps, stepDelayUs);
+  ESP_RETURN_ON_ERROR(prepareYAxisMove(positive), kTag, "Failed to prepare Y move");
+  return runYAxisSteps(steps, stepDelayUs);
 }
 
 esp_err_t BoardHal::prepareXAxisMove(const bool positive) {
@@ -133,6 +139,16 @@ esp_err_t BoardHal::prepareXAxisMove(const bool positive) {
   return ESP_OK;
 }
 
+esp_err_t BoardHal::prepareYAxisMove(const bool positive) {
+  if (!initialized_) {
+    return ESP_ERR_INVALID_STATE;
+  }
+
+  ESP_RETURN_ON_ERROR(setYAxisDirections(positive), kTag, "Failed to set Y direction");
+  esp_rom_delay_us(config_.motion.dirSetupUs);
+  return ESP_OK;
+}
+
 esp_err_t BoardHal::runXAxisSteps(const uint32_t steps, const uint32_t stepDelayUs) {
   if (!initialized_) {
     return ESP_ERR_INVALID_STATE;
@@ -140,26 +156,29 @@ esp_err_t BoardHal::runXAxisSteps(const uint32_t steps, const uint32_t stepDelay
   if (steps == 0) {
     return ESP_OK;
   }
-
-  const uint32_t high_us = config_.motion.stepPulseUs;
-  const uint32_t low_us = stepDelayUs > high_us ? stepDelayUs - high_us : 1;
-
-  for (uint32_t i = 0; i < steps; ++i) {
-    if (stopRequested_.load()) {
-      return ESP_ERR_INVALID_STATE;
-    }
-
-    ESP_RETURN_ON_ERROR(pulseAxisSteps(true, false), kTag, "Failed to pulse X step");
-    esp_rom_delay_us(high_us);
-    ESP_RETURN_ON_ERROR(pulseAxisSteps(false, false), kTag, "Failed to clear X step");
-    esp_rom_delay_us(low_us);
-
-    if (((i + 1U) % kLinearMoveYieldIntervalSteps) == 0U) {
-      vTaskDelay(1);
-    }
+  if (stepDelayUs == 0 || stepDelayUs > (kRmtMaxDurationUs * 2U)) {
+    return ESP_ERR_INVALID_ARG;
   }
 
-  return ESP_OK;
+  clearMotionStop();
+  const bool use_secondary = config_.xAxis.dualMotor && config_.xAxis.secondaryUsesSeparateDriver;
+  return transmitSteps(xAxisRmt_, use_secondary, steps, stepDelayUs);
+}
+
+esp_err_t BoardHal::runYAxisSteps(const uint32_t steps, const uint32_t stepDelayUs) {
+  if (!initialized_) {
+    return ESP_ERR_INVALID_STATE;
+  }
+  if (steps == 0) {
+    return ESP_OK;
+  }
+  if (stepDelayUs == 0 || stepDelayUs > (kRmtMaxDurationUs * 2U)) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  clearMotionStop();
+  const bool use_secondary = config_.yAxis.dualMotor && config_.yAxis.secondaryUsesSeparateDriver;
+  return transmitSteps(yAxisRmt_, use_secondary, steps, stepDelayUs);
 }
 
 esp_err_t BoardHal::moveXYLinear(const bool xPositive, const uint32_t xSteps, const bool yPositive,
@@ -171,6 +190,9 @@ esp_err_t BoardHal::moveXYLinear(const bool xPositive, const uint32_t xSteps, co
   if (xSteps == 0 && ySteps == 0) {
     return ESP_OK;
   }
+  if (stepDelayUs == 0 || stepDelayUs > (kRmtMaxDurationUs * 2U)) {
+    return ESP_ERR_INVALID_ARG;
+  }
 
   clearMotionStop();
   ESP_RETURN_ON_ERROR(setXAxisDirections(xPositive), kTag, "Failed to set X direction");
@@ -180,40 +202,108 @@ esp_err_t BoardHal::moveXYLinear(const bool xPositive, const uint32_t xSteps, co
   const uint32_t major_steps = xSteps > ySteps ? xSteps : ySteps;
   uint32_t x_accumulator = 0;
   uint32_t y_accumulator = 0;
-  const uint32_t high_us = config_.motion.stepPulseUs;
-  const uint32_t low_us = stepDelayUs > high_us ? stepDelayUs - high_us : 1;
+  const bool use_x_secondary = config_.xAxis.dualMotor && config_.xAxis.secondaryUsesSeparateDriver;
+  const bool use_y_secondary = config_.yAxis.dualMotor && config_.yAxis.secondaryUsesSeparateDriver;
+  const bool use_x_axis = xSteps > 0U;
+  const bool use_y_axis = ySteps > 0U;
 
-  for (uint32_t i = 0; i < major_steps; ++i) {
-    if (stopRequested_.load()) {
+  std::array<rmt_symbol_word_t, kRmtChunkSteps> x_symbols{};
+  std::array<rmt_symbol_word_t, kRmtChunkSteps> y_symbols{};
+
+  uint32_t remaining = major_steps;
+  while (remaining > 0U) {
+    if (stopRequested_.load() || isSafetyTripActive()) {
+      if (use_x_axis) {
+        (void)abortAxisTransmission(xAxisRmt_, use_x_secondary);
+      }
+      if (use_y_axis) {
+        (void)abortAxisTransmission(yAxisRmt_, use_y_secondary);
+      }
       return ESP_ERR_INVALID_STATE;
     }
 
-    bool pulse_x = false;
-    bool pulse_y = false;
+    const size_t chunk_steps = computeSafeChunkSteps(stepDelayUs, remaining);
+    for (size_t i = 0; i < chunk_steps; ++i) {
+      bool pulse_x = false;
+      bool pulse_y = false;
 
-    x_accumulator += xSteps;
-    if (x_accumulator >= major_steps) {
-      x_accumulator -= major_steps;
-      pulse_x = xSteps > 0;
+      x_accumulator += xSteps;
+      if (x_accumulator >= major_steps) {
+        x_accumulator -= major_steps;
+        pulse_x = use_x_axis;
+      }
+
+      y_accumulator += ySteps;
+      if (y_accumulator >= major_steps) {
+        y_accumulator -= major_steps;
+        pulse_y = use_y_axis;
+      }
+
+      ESP_RETURN_ON_ERROR(fillStepSymbol(x_symbols[i], pulse_x, stepDelayUs), kTag, "Failed to fill X RMT symbol");
+      ESP_RETURN_ON_ERROR(fillStepSymbol(y_symbols[i], pulse_y, stepDelayUs), kTag, "Failed to fill Y RMT symbol");
     }
 
-    y_accumulator += ySteps;
-    if (y_accumulator >= major_steps) {
-      y_accumulator -= major_steps;
-      pulse_y = ySteps > 0;
+    if (use_x_axis) {
+      ESP_RETURN_ON_ERROR(transmitAxisSymbols(xAxisRmt_, use_x_secondary, x_symbols.data(), chunk_steps), kTag,
+                          "Failed to transmit X chunk");
+    }
+    if (use_y_axis) {
+      ESP_RETURN_ON_ERROR(transmitAxisSymbols(yAxisRmt_, use_y_secondary, y_symbols.data(), chunk_steps), kTag,
+                          "Failed to transmit Y chunk");
     }
 
-    ESP_RETURN_ON_ERROR(pulseAxisSteps(pulse_x, pulse_y), kTag, "Failed to pulse XY steps");
-    esp_rom_delay_us(high_us);
-    ESP_RETURN_ON_ERROR(pulseAxisSteps(false, false), kTag, "Failed to clear XY step pins");
-    esp_rom_delay_us(low_us);
-
-    if (((i + 1U) % kLinearMoveYieldIntervalSteps) == 0U) {
-      vTaskDelay(1);
+    if (use_x_axis) {
+      ESP_RETURN_ON_ERROR(waitForAxisTransmission(xAxisRmt_, use_x_secondary, chunk_steps, stepDelayUs), kTag,
+                          "Failed waiting for X chunk");
     }
+    if (use_y_axis) {
+      ESP_RETURN_ON_ERROR(waitForAxisTransmission(yAxisRmt_, use_y_secondary, chunk_steps, stepDelayUs), kTag,
+                          "Failed waiting for Y chunk");
+    }
+
+    remaining -= static_cast<uint32_t>(chunk_steps);
   }
 
   return ESP_OK;
+}
+
+bool BoardHal::isXLimitActive() const {
+  if (!initialized_) {
+    return false;
+  }
+  return isInputActive(config_.pins.xLimit, config_.safety.xLimitActiveLow);
+}
+
+bool BoardHal::isYLimitActive() const {
+  if (!initialized_) {
+    return false;
+  }
+  return isInputActive(config_.pins.yLimit, config_.safety.yLimitActiveLow);
+}
+
+bool BoardHal::isEstopActive() const {
+  if (!initialized_) {
+    return false;
+  }
+  return isInputActive(config_.pins.estop, config_.safety.estopActiveLow);
+}
+
+bool BoardHal::isLidOpen() const {
+  if (!initialized_) {
+    return false;
+  }
+  return isInputActive(config_.pins.lidInterlock, config_.safety.lidInterlockActiveLow);
+}
+
+bool BoardHal::isAnyLimitActive() const {
+  if (!initialized_) {
+    return false;
+  }
+  return isXLimitActive() || isYLimitActive();
+}
+
+void BoardHal::setIgnoreLimitInputs(const bool ignore) {
+  ignoreLimitInputs_.store(ignore);
 }
 
 void BoardHal::requestMotionStop() {
@@ -329,38 +419,48 @@ esp_err_t BoardHal::transmitSteps(AxisRmtResources &axis, const bool useSecondar
     return ESP_OK;
   }
 
-  rmt_transmit_config_t transmit_config{};
-  transmit_config.loop_count = 0;
-  transmit_config.flags.eot_level = 0;
-  transmit_config.flags.queue_nonblocking = 0;
-
   std::array<rmt_symbol_word_t, kRmtChunkSteps> symbols{};
   uint32_t remaining_steps = steps;
   while (remaining_steps > 0) {
-    if (stopRequested_.load()) {
+    if (stopRequested_.load() || isSafetyTripActive()) {
       ESP_RETURN_ON_ERROR(abortAxisTransmission(axis, useSecondary), kTag, "Failed to abort axis transmission");
       return ESP_ERR_INVALID_STATE;
     }
 
-    const size_t chunk_steps = remaining_steps > kRmtChunkSteps ? kRmtChunkSteps : remaining_steps;
+    const size_t chunk_steps = computeSafeChunkSteps(stepDelayUs, remaining_steps);
     ESP_RETURN_ON_ERROR(fillStepSymbols(symbols.data(), chunk_steps, stepDelayUs), kTag, "Failed to prepare symbols");
-
-    ESP_RETURN_ON_ERROR(rmt_encoder_reset(copyEncoder_), kTag, "Failed to reset RMT encoder");
-    ESP_RETURN_ON_ERROR(rmt_transmit(axis.primaryChannel, copyEncoder_, symbols.data(),
-                                     chunk_steps * sizeof(rmt_symbol_word_t), &transmit_config),
-                        kTag, "Failed to transmit primary steps");
-    if (useSecondary && axis.secondaryChannel != nullptr) {
-      ESP_RETURN_ON_ERROR(rmt_encoder_reset(copyEncoder_), kTag, "Failed to reset RMT encoder");
-      ESP_RETURN_ON_ERROR(rmt_transmit(axis.secondaryChannel, copyEncoder_, symbols.data(),
-                                       chunk_steps * sizeof(rmt_symbol_word_t), &transmit_config),
-                          kTag, "Failed to transmit secondary steps");
-    }
+    ESP_RETURN_ON_ERROR(transmitAxisSymbols(axis, useSecondary, symbols.data(), chunk_steps), kTag,
+                        "Failed to transmit axis chunk");
 
     ESP_RETURN_ON_ERROR(waitForAxisTransmission(axis, useSecondary, chunk_steps, stepDelayUs), kTag,
                         "Failed waiting for RMT transmission");
     remaining_steps -= static_cast<uint32_t>(chunk_steps);
   }
 
+  return ESP_OK;
+}
+
+esp_err_t BoardHal::transmitAxisSymbols(AxisRmtResources &axis, const bool useSecondary, const rmt_symbol_word_t *symbols,
+                                        const size_t count) {
+  if (count == 0 || symbols == nullptr || axis.primaryChannel == nullptr || copyEncoder_ == nullptr) {
+    return ESP_OK;
+  }
+
+  rmt_transmit_config_t transmit_config{};
+  transmit_config.loop_count = 0;
+  transmit_config.flags.eot_level = 0;
+  transmit_config.flags.queue_nonblocking = 0;
+
+  ESP_RETURN_ON_ERROR(rmt_encoder_reset(copyEncoder_), kTag, "Failed to reset RMT encoder");
+  ESP_RETURN_ON_ERROR(rmt_transmit(axis.primaryChannel, copyEncoder_, symbols, count * sizeof(rmt_symbol_word_t),
+                                   &transmit_config),
+                      kTag, "Failed to transmit primary symbols");
+  if (useSecondary && axis.secondaryChannel != nullptr) {
+    ESP_RETURN_ON_ERROR(rmt_encoder_reset(copyEncoder_), kTag, "Failed to reset RMT encoder");
+    ESP_RETURN_ON_ERROR(rmt_transmit(axis.secondaryChannel, copyEncoder_, symbols, count * sizeof(rmt_symbol_word_t),
+                                     &transmit_config),
+                        kTag, "Failed to transmit secondary symbols");
+  }
   return ESP_OK;
 }
 
@@ -381,7 +481,7 @@ esp_err_t BoardHal::abortAxisTransmission(AxisRmtResources &axis, const bool use
 
 esp_err_t BoardHal::waitForAxisTransmission(AxisRmtResources &axis, const bool useSecondary, const size_t chunkSteps,
                                             const uint32_t stepDelayUs) {
-  if (stopRequested_.load()) {
+  if (stopRequested_.load() || isSafetyTripActive()) {
     return abortAxisTransmission(axis, useSecondary);
   }
 
@@ -400,6 +500,29 @@ esp_err_t BoardHal::waitForAxisTransmission(AxisRmtResources &axis, const bool u
   }
 
   return ESP_OK;
+}
+
+size_t BoardHal::computeSafeChunkSteps(const uint32_t stepDelayUs, const size_t remainingSteps) const {
+  if (remainingSteps == 0U) {
+    return 0U;
+  }
+  if (stepDelayUs == 0U) {
+    return 1U;
+  }
+
+  size_t budget_steps = static_cast<size_t>(kSafetyChunkBudgetUs / stepDelayUs);
+  if (budget_steps == 0U) {
+    budget_steps = 1U;
+  }
+
+  size_t chunk_steps = remainingSteps < kRmtChunkSteps ? remainingSteps : kRmtChunkSteps;
+  if (chunk_steps > budget_steps) {
+    chunk_steps = budget_steps;
+  }
+  if (chunk_steps == 0U) {
+    chunk_steps = 1U;
+  }
+  return chunk_steps;
 }
 
 esp_err_t BoardHal::setXAxisDirections(const bool positive) {
@@ -430,25 +553,38 @@ esp_err_t BoardHal::setYAxisDirections(const bool positive) {
   return ESP_OK;
 }
 
-esp_err_t BoardHal::pulseAxisSteps(const bool pulseX, const bool pulseY) {
-  if (config_.pins.xStep >= 0) {
-    ESP_RETURN_ON_ERROR(gpio_set_level(static_cast<gpio_num_t>(config_.pins.xStep), pulseX ? 1 : 0), kTag,
-                        "Failed to set X step");
-  }
-  if (config_.xAxis.dualMotor && config_.xAxis.secondaryUsesSeparateDriver && config_.pins.xSecondaryStep >= 0) {
-    ESP_RETURN_ON_ERROR(gpio_set_level(static_cast<gpio_num_t>(config_.pins.xSecondaryStep), pulseX ? 1 : 0), kTag,
-                        "Failed to set X secondary step");
+esp_err_t BoardHal::fillStepSymbol(rmt_symbol_word_t &symbol, const bool pulse, const uint32_t stepDelayUs) const {
+  if (stepDelayUs == 0U || stepDelayUs > (kRmtMaxDurationUs * 2U)) {
+    return ESP_ERR_INVALID_ARG;
   }
 
-  if (config_.pins.yStep >= 0) {
-    ESP_RETURN_ON_ERROR(gpio_set_level(static_cast<gpio_num_t>(config_.pins.yStep), pulseY ? 1 : 0), kTag,
-                        "Failed to set Y step");
-  }
-  if (config_.yAxis.dualMotor && config_.yAxis.secondaryUsesSeparateDriver && config_.pins.ySecondaryStep >= 0) {
-    ESP_RETURN_ON_ERROR(gpio_set_level(static_cast<gpio_num_t>(config_.pins.ySecondaryStep), pulseY ? 1 : 0), kTag,
-                        "Failed to set Y secondary step");
+  if (pulse) {
+    const uint32_t high_us = config_.motion.stepPulseUs > 0U ? config_.motion.stepPulseUs : 1U;
+    const uint32_t pulse_high = high_us < stepDelayUs ? high_us : stepDelayUs;
+    const uint32_t pulse_low = stepDelayUs > pulse_high ? (stepDelayUs - pulse_high) : 1U;
+    if (pulse_high > kRmtMaxDurationUs || pulse_low > kRmtMaxDurationUs) {
+      return ESP_ERR_INVALID_ARG;
+    }
+    symbol.level0 = 1;
+    symbol.duration0 = pulse_high;
+    symbol.level1 = 0;
+    symbol.duration1 = pulse_low;
+    return ESP_OK;
   }
 
+  uint32_t d0 = stepDelayUs / 2U;
+  uint32_t d1 = stepDelayUs - d0;
+  if (d0 == 0U) {
+    d0 = 1U;
+    d1 = 1U;
+  }
+  if (d0 > kRmtMaxDurationUs || d1 > kRmtMaxDurationUs) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  symbol.level0 = 0;
+  symbol.duration0 = d0;
+  symbol.level1 = 0;
+  symbol.duration1 = d1;
   return ESP_OK;
 }
 
@@ -456,17 +592,38 @@ esp_err_t BoardHal::fillStepSymbols(rmt_symbol_word_t *symbols, const size_t cou
   if (symbols == nullptr || count == 0) {
     return ESP_ERR_INVALID_ARG;
   }
-
-  const uint32_t high_us = config_.motion.stepPulseUs;
-  const uint32_t low_us = stepDelayUs > high_us ? stepDelayUs - high_us : 1;
+  if (stepDelayUs == 0U || stepDelayUs > (kRmtMaxDurationUs * 2U)) {
+    return ESP_ERR_INVALID_ARG;
+  }
   for (size_t i = 0; i < count; ++i) {
-    symbols[i].level0 = 1;
-    symbols[i].duration0 = high_us;
-    symbols[i].level1 = 0;
-    symbols[i].duration1 = low_us;
+    ESP_RETURN_ON_ERROR(fillStepSymbol(symbols[i], true, stepDelayUs), kTag, "Failed to fill pulse symbol");
   }
 
   return ESP_OK;
+}
+
+bool BoardHal::isInputActive(const int pin, const bool activeLow) const {
+  if (pin < 0) {
+    return false;
+  }
+  const int level = gpio_get_level(static_cast<gpio_num_t>(pin));
+  return activeLow ? (level == 0) : (level != 0);
+}
+
+bool BoardHal::isSafetyTripActive() const {
+  if (!initialized_) {
+    return false;
+  }
+
+  if (isEstopActive() || isLidOpen()) {
+    return true;
+  }
+
+  if (!ignoreLimitInputs_.load() && isAnyLimitActive()) {
+    return true;
+  }
+
+  return false;
 }
 
 }  // namespace hal

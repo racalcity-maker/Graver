@@ -301,6 +301,14 @@ esp_err_t ParseSafety(const cJSON *root, shared::SafetyConfig &safety) {
   }
 
   const cJSON *homing_enabled = cJSON_GetObjectItemCaseSensitive(section, "homingEnabled");
+  const cJSON *home_x_enabled = cJSON_GetObjectItemCaseSensitive(section, "homeXEnabled");
+  const cJSON *home_y_enabled = cJSON_GetObjectItemCaseSensitive(section, "homeYEnabled");
+  const cJSON *home_x_to_min = cJSON_GetObjectItemCaseSensitive(section, "homeXToMin");
+  const cJSON *home_y_to_min = cJSON_GetObjectItemCaseSensitive(section, "homeYToMin");
+  const cJSON *homing_seek_feed = cJSON_GetObjectItemCaseSensitive(section, "homingSeekFeedMmMin");
+  const cJSON *homing_latch_feed = cJSON_GetObjectItemCaseSensitive(section, "homingLatchFeedMmMin");
+  const cJSON *homing_pull_off = cJSON_GetObjectItemCaseSensitive(section, "homingPullOffMm");
+  const cJSON *homing_timeout_ms = cJSON_GetObjectItemCaseSensitive(section, "homingTimeoutMs");
   const cJSON *require_homing = GetRequiredBool(section, "requireHomingBeforeRun");
   const cJSON *stop_laser_on_pause = GetRequiredBool(section, "stopLaserOnPause");
   const cJSON *stop_laser_on_alarm = GetRequiredBool(section, "stopLaserOnAlarm");
@@ -320,6 +328,30 @@ esp_err_t ParseSafety(const cJSON *root, shared::SafetyConfig &safety) {
   }
 
   safety.homingEnabled = cJSON_IsBool(homing_enabled) ? cJSON_IsTrue(homing_enabled) : false;
+  if (cJSON_IsBool(home_x_enabled)) {
+    safety.homeXEnabled = cJSON_IsTrue(home_x_enabled);
+  }
+  if (cJSON_IsBool(home_y_enabled)) {
+    safety.homeYEnabled = cJSON_IsTrue(home_y_enabled);
+  }
+  if (cJSON_IsBool(home_x_to_min)) {
+    safety.homeXToMin = cJSON_IsTrue(home_x_to_min);
+  }
+  if (cJSON_IsBool(home_y_to_min)) {
+    safety.homeYToMin = cJSON_IsTrue(home_y_to_min);
+  }
+  if (cJSON_IsNumber(homing_seek_feed) && homing_seek_feed->valuedouble > 0.0) {
+    safety.homingSeekFeedMmMin = static_cast<float>(homing_seek_feed->valuedouble);
+  }
+  if (cJSON_IsNumber(homing_latch_feed) && homing_latch_feed->valuedouble > 0.0) {
+    safety.homingLatchFeedMmMin = static_cast<float>(homing_latch_feed->valuedouble);
+  }
+  if (cJSON_IsNumber(homing_pull_off) && homing_pull_off->valuedouble > 0.0) {
+    safety.homingPullOffMm = static_cast<float>(homing_pull_off->valuedouble);
+  }
+  if (cJSON_IsNumber(homing_timeout_ms) && homing_timeout_ms->valuedouble > 0.0) {
+    safety.homingTimeoutMs = static_cast<uint32_t>(homing_timeout_ms->valuedouble);
+  }
   safety.requireHomingBeforeRun = cJSON_IsTrue(require_homing);
   safety.stopLaserOnPause = cJSON_IsTrue(stop_laser_on_pause);
   safety.stopLaserOnAlarm = cJSON_IsTrue(stop_laser_on_alarm);

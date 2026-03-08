@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>LaserGraver</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=20260304e">
+  <link rel="stylesheet" href="/assets/styles.css?v=20260307a">
 </head>
 <body data-home-action="__HOME_ACTION__">
   <div class="shell">
@@ -403,6 +403,53 @@
     <section id="tab-settings" class="panel hidden">
       <h2>Runtime Settings</h2>
       <div class="panel">
+        <h3>Homing</h3>
+        <div class="inline">
+          <label>
+            <span class="label">Enable Homing</span>
+            <input id="homing-enabled" type="checkbox">
+          </label>
+          <label>
+            <span class="label">Home X</span>
+            <input id="homing-x-enabled" type="checkbox" checked>
+          </label>
+          <label>
+            <span class="label">Home Y</span>
+            <input id="homing-y-enabled" type="checkbox" checked>
+          </label>
+          <label>
+            <span class="label">X Toward Min</span>
+            <input id="homing-x-to-min" type="checkbox" checked>
+          </label>
+          <label>
+            <span class="label">Y Toward Min</span>
+            <input id="homing-y-to-min" type="checkbox" checked>
+          </label>
+        </div>
+        <div class="inline">
+          <label>
+            <span class="label">Seek mm/min</span>
+            <input id="homing-seek-feed" type="number" value="900" min="1" step="10">
+          </label>
+          <label>
+            <span class="label">Latch mm/min</span>
+            <input id="homing-latch-feed" type="number" value="240" min="1" step="10">
+          </label>
+          <label>
+            <span class="label">Pull-off mm</span>
+            <input id="homing-pull-off" type="number" value="2" min="0.1" step="0.1">
+          </label>
+          <label>
+            <span class="label">Timeout ms</span>
+            <input id="homing-timeout-ms" type="number" value="30000" min="1000" step="500">
+          </label>
+        </div>
+        <div class="inline actions" style="margin-top:12px">
+          <button class="btn" id="save-homing-btn" type="button">Save Homing Settings</button>
+        </div>
+        <p id="homing-save-status">Changing homing settings requires firmware restart.</p>
+      </div>
+      <div class="panel">
         <h3>Wi-Fi</h3>
         <div class="inline">
           <label>
@@ -426,6 +473,6 @@
     </section>
   </div>
   <iframe name="cmd-frame" style="display:none"></iframe>
-  <script type="module" src="/assets/app.js?v=20260304e"></script>
+  <script type="module" src="/assets/app.js?v=20260307a"></script>
 </body>
 </html>

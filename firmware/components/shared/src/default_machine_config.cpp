@@ -92,6 +92,15 @@ constexpr bool kHomingEnabled = true;
 constexpr bool kHomingEnabled = false;
 #endif
 
+constexpr bool kHomeXEnabled = true;
+constexpr bool kHomeYEnabled = true;
+constexpr bool kHomeXToMin = true;
+constexpr bool kHomeYToMin = true;
+constexpr float kHomingSeekFeedMmMin = 900.0f;
+constexpr float kHomingLatchFeedMmMin = 240.0f;
+constexpr float kHomingPullOffMm = 2.0f;
+constexpr uint32_t kHomingTimeoutMs = 30000;
+
 #ifdef CONFIG_LASERGRAVER_STOP_LASER_ON_PAUSE
 constexpr bool kStopLaserOnPause = true;
 #else
@@ -204,6 +213,14 @@ MachineConfig BuildDefaultMachineConfig() {
   config.laser.gateActiveHigh = kLaserGateActiveHigh;
 
   config.safety.homingEnabled = kHomingEnabled;
+  config.safety.homeXEnabled = kHomeXEnabled;
+  config.safety.homeYEnabled = kHomeYEnabled;
+  config.safety.homeXToMin = kHomeXToMin;
+  config.safety.homeYToMin = kHomeYToMin;
+  config.safety.homingSeekFeedMmMin = kHomingSeekFeedMmMin;
+  config.safety.homingLatchFeedMmMin = kHomingLatchFeedMmMin;
+  config.safety.homingPullOffMm = kHomingPullOffMm;
+  config.safety.homingTimeoutMs = kHomingTimeoutMs;
   config.safety.requireHomingBeforeRun = kRequireHomingBeforeRun;
   config.safety.stopLaserOnPause = kStopLaserOnPause;
   config.safety.stopLaserOnAlarm = kStopLaserOnAlarm;

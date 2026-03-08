@@ -52,6 +52,14 @@ struct LaserConfig {
 
 struct SafetyConfig {
   bool homingEnabled;
+  bool homeXEnabled;
+  bool homeYEnabled;
+  bool homeXToMin;
+  bool homeYToMin;
+  float homingSeekFeedMmMin;
+  float homingLatchFeedMmMin;
+  float homingPullOffMm;
+  uint32_t homingTimeoutMs;
   bool requireHomingBeforeRun;
   bool stopLaserOnPause;
   bool stopLaserOnAlarm;

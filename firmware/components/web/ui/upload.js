@@ -1,6 +1,6 @@
-import { uploadJobManifest, uploadJobRaster } from '/assets/api.js?v=20260304e';
-import { loadImageFromFile, rasterizeToGray8 } from '/assets/image/rasterize.js?v=20260304e';
-import { renderPrimitiveCanvas } from '/assets/image/primitives.js?v=20260304d';
+import { uploadJobManifest, uploadJobRaster } from '/assets/api.js?v=20260307a';
+import { loadImageFromFile, rasterizeToGray8 } from '/assets/image/rasterize.js?v=20260307a';
+import { renderPrimitiveCanvas } from '/assets/image/primitives.js?v=20260307a';
 
 const TEXT_FONT_STACKS = {
   arial: 'Arial, "Helvetica Neue", Helvetica, sans-serif',

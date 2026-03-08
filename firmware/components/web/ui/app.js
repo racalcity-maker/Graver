@@ -1,5 +1,5 @@
-import { connectWiFi, listJobs, loadSettings, loadStatus, postJson } from '/assets/api.js?v=20260304e';
-import { initUpload } from '/assets/upload.js?v=20260304e';
+import { connectWiFi, listJobs, loadSettings, loadStatus, postJson } from '/assets/api.js?v=20260307a';
+import { initUpload } from '/assets/upload.js?v=20260307a';
 
 const tabs = document.querySelectorAll('[data-tab]');
 const panels = {
@@ -10,7 +10,7 @@ const panels = {
   settings: document.getElementById('tab-settings'),
 };
 const logNode = document.getElementById('command-log');
-const homeAction = document.body.dataset.homeAction || document.getElementById('home-btn').textContent.trim();
+let homeAction = document.body.dataset.homeAction || document.getElementById('home-btn').textContent.trim();
 let statusPollHandle = null;
 
 function setTab(name) {
@@ -21,6 +21,13 @@ function setTab(name) {
 function logLine(message) {
   const stamp = new Date().toLocaleTimeString();
   logNode.textContent = `[${stamp}] ${message}\n${logNode.textContent}`;
+}
+
+function updateHomeActionUi(homingEnabled) {
+  homeAction = homingEnabled ? 'Home' : 'Set Zero';
+  document.body.dataset.homeAction = homeAction;
+  const homeButton = document.getElementById('home-btn');
+  homeButton.textContent = homeAction;
 }
 
 async function refreshStatus() {
@@ -76,6 +83,33 @@ async function loadSettingsIntoUi() {
   document.getElementById('settings-json').value = JSON.stringify(settings, null, 2);
   document.getElementById('wifi-ssid').value = settings?.network?.staSsid || '';
   document.getElementById('wifi-password').value = settings?.network?.staPassword || '';
+  const safety = settings?.safety || {};
+  document.getElementById('homing-enabled').checked = !!safety.homingEnabled;
+  document.getElementById('homing-x-enabled').checked = safety.homeXEnabled !== false;
+  document.getElementById('homing-y-enabled').checked = safety.homeYEnabled !== false;
+  document.getElementById('homing-x-to-min').checked = safety.homeXToMin !== false;
+  document.getElementById('homing-y-to-min').checked = safety.homeYToMin !== false;
+  document.getElementById('homing-seek-feed').value = Number(safety.homingSeekFeedMmMin || 900);
+  document.getElementById('homing-latch-feed').value = Number(safety.homingLatchFeedMmMin || 240);
+  document.getElementById('homing-pull-off').value = Number(safety.homingPullOffMm || 2);
+  document.getElementById('homing-timeout-ms').value = Number(safety.homingTimeoutMs || 30000);
+  updateHomeActionUi(!!safety.homingEnabled);
+}
+
+function applyHomingSettingsToConfig(config) {
+  if (!config.safety) {
+    config.safety = {};
+  }
+  config.safety.homingEnabled = document.getElementById('homing-enabled').checked;
+  config.safety.homeXEnabled = document.getElementById('homing-x-enabled').checked;
+  config.safety.homeYEnabled = document.getElementById('homing-y-enabled').checked;
+  config.safety.homeXToMin = document.getElementById('homing-x-to-min').checked;
+  config.safety.homeYToMin = document.getElementById('homing-y-to-min').checked;
+  config.safety.homingSeekFeedMmMin = Number(document.getElementById('homing-seek-feed').value);
+  config.safety.homingLatchFeedMmMin = Number(document.getElementById('homing-latch-feed').value);
+  config.safety.homingPullOffMm = Number(document.getElementById('homing-pull-off').value);
+  config.safety.homingTimeoutMs = Number(document.getElementById('homing-timeout-ms').value);
+  return config;
 }
 
 async function runMoveTo() {
@@ -183,6 +217,27 @@ document.getElementById('wifi-connect-btn').addEventListener('click', async () =
   } catch (error) {
     statusNode.textContent = `Wi-Fi connect failed: ${error.message}`;
     logLine(`Wi-Fi connect failed: ${error.message}`);
+  }
+});
+
+document.getElementById('homing-enabled').addEventListener('change', (event) => {
+  updateHomeActionUi(event.target.checked);
+});
+
+document.getElementById('save-homing-btn').addEventListener('click', async () => {
+  const statusNode = document.getElementById('homing-save-status');
+  try {
+    statusNode.textContent = 'Saving...';
+    const settings = await loadSettings();
+    const updated = applyHomingSettingsToConfig(settings);
+    await postJson('/api/settings/machine', updated);
+    document.getElementById('settings-json').value = JSON.stringify(updated, null, 2);
+    updateHomeActionUi(!!updated?.safety?.homingEnabled);
+    statusNode.textContent = 'Saved. Restart firmware to apply.';
+    logLine('Homing settings saved (restart required).');
+  } catch (error) {
+    statusNode.textContent = `Save failed: ${error.message}`;
+    logLine(`Homing settings save failed: ${error.message}`);
   }
 });
 

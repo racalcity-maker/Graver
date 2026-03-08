@@ -18,6 +18,8 @@ const char *ToString(const MachineState state) {
       return "paused";
     case MachineState::Alarm:
       return "alarm";
+    case MachineState::EstopLatched:
+      return "estop_latched";
     default:
       return "unknown";
   }

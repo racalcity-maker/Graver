@@ -42,6 +42,7 @@ class WebServer {
   static esp_err_t HandleMoveTo(httpd_req_t *request);
   static esp_err_t HandleHoldMotors(httpd_req_t *request);
   static esp_err_t HandleReleaseMotors(httpd_req_t *request);
+  static esp_err_t HandleClearAlarm(httpd_req_t *request);
   static esp_err_t HandleFrame(httpd_req_t *request);
   static esp_err_t HandleStop(httpd_req_t *request);
 

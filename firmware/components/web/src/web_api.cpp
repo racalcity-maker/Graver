@@ -136,6 +136,14 @@ cJSON *BuildMachineConfigJson(const shared::MachineConfig &config) {
   cJSON_AddBoolToObject(laser, "gateActiveHigh", config.laser.gateActiveHigh);
 
   cJSON_AddBoolToObject(safety, "homingEnabled", config.safety.homingEnabled);
+  cJSON_AddBoolToObject(safety, "homeXEnabled", config.safety.homeXEnabled);
+  cJSON_AddBoolToObject(safety, "homeYEnabled", config.safety.homeYEnabled);
+  cJSON_AddBoolToObject(safety, "homeXToMin", config.safety.homeXToMin);
+  cJSON_AddBoolToObject(safety, "homeYToMin", config.safety.homeYToMin);
+  cJSON_AddNumberToObject(safety, "homingSeekFeedMmMin", config.safety.homingSeekFeedMmMin);
+  cJSON_AddNumberToObject(safety, "homingLatchFeedMmMin", config.safety.homingLatchFeedMmMin);
+  cJSON_AddNumberToObject(safety, "homingPullOffMm", config.safety.homingPullOffMm);
+  cJSON_AddNumberToObject(safety, "homingTimeoutMs", config.safety.homingTimeoutMs);
   cJSON_AddBoolToObject(safety, "requireHomingBeforeRun", config.safety.requireHomingBeforeRun);
   cJSON_AddBoolToObject(safety, "stopLaserOnPause", config.safety.stopLaserOnPause);
   cJSON_AddBoolToObject(safety, "stopLaserOnAlarm", config.safety.stopLaserOnAlarm);
@@ -220,11 +228,12 @@ esp_err_t WebServer::HandleStatus(httpd_req_t *request) {
   const char *network_mode = server->network_.staConnected() ? "sta" : (server->network_.apActive() ? "ap" : "idle");
   const std::string sta_ip = server->network_.staIp();
 
-  char body[512];
+  char body[768];
   std::snprintf(
       body, sizeof(body),
-      "{\"state\":\"%s\",\"homed\":%s,\"laserArmed\":%s,\"motorsHeld\":%s,\"motionBusy\":%s,\"motionOp\":\"%s\",\"x\":%.3f,\"y\":%.3f,\"activeJobId\":\"%s\",\"message\":\"%s\",\"jobRowsDone\":%u,\"jobRowsTotal\":%u,\"jobProgressPercent\":%u,\"networkMode\":\"%s\",\"staConnected\":%s,\"staIp\":\"%s\",\"apActive\":%s}",
-      shared::ToString(status.state), status.homed ? "true" : "false", status.laserArmed ? "true" : "false",
+      "{\"state\":\"%s\",\"homed\":%s,\"estopActive\":%s,\"lidOpen\":%s,\"limitActive\":%s,\"laserArmed\":%s,\"motorsHeld\":%s,\"motionBusy\":%s,\"motionOp\":\"%s\",\"x\":%.3f,\"y\":%.3f,\"activeJobId\":\"%s\",\"message\":\"%s\",\"jobRowsDone\":%u,\"jobRowsTotal\":%u,\"jobProgressPercent\":%u,\"networkMode\":\"%s\",\"staConnected\":%s,\"staIp\":\"%s\",\"apActive\":%s}",
+      shared::ToString(status.state), status.homed ? "true" : "false", status.estopActive ? "true" : "false",
+      status.lidOpen ? "true" : "false", status.limitActive ? "true" : "false", status.laserArmed ? "true" : "false",
       status.motorsHeld ? "true" : "false", status.motionBusy ? "true" : "false",
       shared::ToString(status.motionOperation),
       static_cast<double>(status.position.x), static_cast<double>(status.position.y), status.activeJobId.c_str(),
@@ -704,6 +713,14 @@ esp_err_t WebServer::HandleReleaseMotors(httpd_req_t *request) {
   const esp_err_t err = server->control_.releaseMotors();
   return err == ESP_OK ? SendSimpleResponse(request, 202, "{\"ok\":true}")
                        : SendErrNameResponse(request, 409, "release-motors-failed", err);
+}
+
+esp_err_t WebServer::HandleClearAlarm(httpd_req_t *request) {
+  WebServer *server = FromRequest(request);
+  ESP_LOGI(kTag, "POST /api/control/clear-alarm");
+  const esp_err_t err = server->control_.clearAlarm();
+  return err == ESP_OK ? SendSimpleResponse(request, 202, "{\"ok\":true}")
+                       : SendErrNameResponse(request, 409, "clear-alarm-failed", err);
 }
 
 esp_err_t WebServer::HandleStop(httpd_req_t *request) {

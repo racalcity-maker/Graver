@@ -28,7 +28,7 @@ esp_err_t WebServer::start() {
 
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.uri_match_fn = httpd_uri_match_wildcard;
-  config.max_uri_handlers = 24;
+  config.max_uri_handlers = 28;
   config.stack_size = 10240;
   config.keep_alive_enable = false;
 
@@ -107,6 +107,12 @@ esp_err_t WebServer::registerRoutes() {
   release_motors_route.method = HTTP_POST;
   release_motors_route.handler = &WebServer::HandleReleaseMotors;
   release_motors_route.user_ctx = this;
+
+  httpd_uri_t clear_alarm_route{};
+  clear_alarm_route.uri = "/api/control/clear-alarm";
+  clear_alarm_route.method = HTTP_POST;
+  clear_alarm_route.handler = &WebServer::HandleClearAlarm;
+  clear_alarm_route.user_ctx = this;
 
   httpd_uri_t machine_settings_route{};
   machine_settings_route.uri = "/api/settings/machine";
@@ -208,6 +214,7 @@ esp_err_t WebServer::registerRoutes() {
   ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server_, &hold_motors_route), kTag, "Hold motors route failed");
   ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server_, &release_motors_route), kTag,
                       "Release motors route failed");
+  ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server_, &clear_alarm_route), kTag, "Clear alarm route failed");
   ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server_, &machine_settings_route), kTag,
                       "Machine settings route failed");
   ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server_, &machine_settings_update_route), kTag,

@@ -28,6 +28,16 @@ struct RasterSegment {
   uint8_t power;
 };
 
+struct MotionStateSnapshot {
+  shared::PositionMm position;
+  bool homed;
+  bool motorsHeld;
+  bool pending;
+  shared::MotionOperation activeOperation;
+  esp_err_t lastError;
+  bool started;
+};
+
 class MotionService {
  public:
   MotionService(const shared::MachineConfig &config, hal::BoardHal &boardHal);
@@ -48,8 +58,12 @@ class MotionService {
   esp_err_t releaseMotors();
   esp_err_t stop();
   shared::PositionMm position() const;
+  MotionStateSnapshot snapshot() const;
   bool isHomed() const;
   bool motorsHeld() const;
+  bool isEstopActive() const;
+  bool isLidOpen() const;
+  bool isAnyLimitActive() const;
   bool isBusy() const;
   shared::MotionOperation activeOperation() const;
   esp_err_t lastError() const;
@@ -74,9 +88,16 @@ class MotionService {
   esp_err_t executeJog(const MotionCommand &command);
   esp_err_t executeGoToZero(const MotionCommand &command);
   esp_err_t executeMoveTo(const MotionCommand &command);
+  esp_err_t executeAxisHome(AxisId axis, bool towardMin, float seekFeedMmMin, float latchFeedMmMin, float pullOffMm,
+                            uint32_t timeoutMs);
+  bool isAxisLimitActive(AxisId axis) const;
+  esp_err_t moveAxisSteps(AxisId axis, bool positive, uint32_t steps, uint32_t stepDelayUs);
+  static uint32_t computeStepDelayUs(float feedMmMin, float stepsPerMm);
   esp_err_t executeLinearMove(float deltaXmm, float deltaYmm, float feedMmMin, shared::MotionOperation operation);
   bool isWithinSoftLimits(float xMm, float yMm) const;
   esp_err_t validateTargetPosition(float xMm, float yMm, shared::MotionOperation operation) const;
+  void lockState() const;
+  void unlockState() const;
 
   shared::MachineConfig config_;
   hal::BoardHal &boardHal_;
@@ -88,6 +109,7 @@ class MotionService {
   esp_err_t lastError_;
   QueueHandle_t commandQueue_;
   SemaphoreHandle_t completionSemaphore_;
+  mutable SemaphoreHandle_t stateMutex_;
   TaskHandle_t workerTask_;
   bool started_;
 };

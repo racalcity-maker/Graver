@@ -12,6 +12,7 @@ enum class MachineState {
   Running,
   Paused,
   Alarm,
+  EstopLatched,
 };
 
 enum class MotionOperation {
@@ -31,6 +32,9 @@ struct PositionMm {
 struct MachineStatus {
   MachineState state;
   bool homed;
+  bool estopActive;
+  bool lidOpen;
+  bool limitActive;
   bool laserArmed;
   bool motorsHeld;
   bool motionBusy;

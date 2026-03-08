@@ -35,6 +35,7 @@ class ControlService {
   esp_err_t pauseJob();
   esp_err_t resumeJob();
   esp_err_t abortJob();
+  esp_err_t clearAlarm();
   esp_err_t holdMotors();
   esp_err_t releaseMotors();
   esp_err_t frame();
@@ -47,10 +48,20 @@ class ControlService {
  private:
   enum class CommandType {
     Home,
+    SetZero,
+    GoToZero,
+    MoveTo,
+    HoldMotors,
+    ReleaseMotors,
     Frame,
     Jog,
     LaserPulse,
     RunJob,
+    Pause,
+    Resume,
+    Abort,
+    ClearAlarm,
+    JobFinished,
   };
 
   struct Command {
@@ -58,14 +69,20 @@ class ControlService {
     motion::AxisId axis;
     float distanceMm;
     float feedMmMin;
+    float targetXmm;
+    float targetYmm;
     uint8_t power;
     uint32_t durationMs;
+    esp_err_t result;
+    uint32_t completedUnits;
     char jobId[64];
   };
 
   static void WorkerEntry(void *context);
+  static void JobEntry(void *context);
 
   void workerLoop();
+  void jobLoop(jobs::LoadedJob job);
   Command makeCommand(CommandType type, motion::AxisId axis, float distanceMm, float feedMmMin, uint8_t power,
                       uint32_t durationMs) const;
   esp_err_t enqueue(const Command &command);
@@ -74,6 +91,11 @@ class ControlService {
   void unlockState();
   void setState(shared::MachineState state, const std::string &message);
   void setAlarm(const std::string &message);
+  void tripAlarm(const std::string &reason, bool estopLatched);
+  bool checkSafetyAndTrip();
+  bool isAlarmLikeStateLocked() const;
+  bool isRuntimeCommand(const Command &command) const;
+  bool isExclusiveCommand(const Command &command) const;
   void refreshMotionStateLocked();
 
   shared::MachineConfig config_;
@@ -85,6 +107,7 @@ class ControlService {
   QueueHandle_t commandQueue_;
   SemaphoreHandle_t stateMutex_;
   TaskHandle_t workerTask_;
+  TaskHandle_t jobTask_;
   shared::MachineState state_;
   std::string activeJobId_;
   std::string message_;
