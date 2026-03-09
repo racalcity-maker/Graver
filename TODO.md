@@ -1,79 +1,118 @@
-# TODO (LaserGraver ESP32-S3)
+# TODO Roadmap (LaserGraver ESP32-S3)
 
-Текущий backlog по тому, что осталось довести до стабильного рабочего состояния.
+Last update: 2026-03-09
 
-## 1) Safety (критично)
+Legend:
+- `[x]` done
+- `[~]` partial (implemented, but not stable/complete)
+- `[ ]` todo
 
-- [ ] Завершить hard emergency stop:
-  - [ ] `tripAlarm(reason)` с latch-состоянием `Alarm/EstopLatched`
-  - [ ] мгновенно `laserOff()` при E-STOP и lid open
-  - [ ] немедленная остановка step engine
-  - [ ] блокировка новых команд до `clearAlarm`
-- [ ] `clearAlarm` разрешать только после исчезновения причины аварии
-- [ ] Limit switch в обычной работе должен вызывать alarm (кроме homing)
+## Stage 1 - Critical Safety + Stable Core (in progress)
 
-## 2) Motion core и стабильность
+### 1.1 Emergency stop and alarms
+- [x] Wire safety inputs in config/HAL (`estop`, `lid`, `limits`) and read them at runtime
+- [x] Hard `tripAlarm(reason)` with latched `Alarm/EstopLatched` state
+- [x] Immediate `laserOff()` on E-STOP and lid-open in all execution paths
+- [~] Immediate motion stop (step engine stop/cancel), not only command rejection
+- [x] `clearAlarm` only when root cause is no longer active
+- [x] Auto block all new commands while alarm is latched
 
-- [ ] Довести неблокирующий step backend (RMT/GPTimer/ISR) до стабильной работы без `flush timeout`
-- [ ] Убрать зависания `job_worker/control_worker` и WDT-триггеры при ошибках движения
-- [ ] Разнести planner и physical pulse generation окончательно (четкие интерфейсы)
-- [ ] Добавить recovery path после ошибок motion (чистый выход из busy/alarm)
+### 1.2 Control runtime architecture
+- [x] Command queue exists (`jog`, `home/set zero`, `start`, `pause`, `resume`, `abort`)
+- [~] Single-owner control flow is partially in place
+- [~] Formal state machine with explicit transitions (Idle/Running/Paused/Alarm/Homing)
+- [~] Remove remaining race-prone shared-state access patterns
+- [x] Snapshot-based status read contract for web/API
 
-## 3) Homing (полноценный)
+### 1.3 Motion backend stability
+- [~] Non-blocking/RMT-oriented step backend introduced
+- [ ] Fix `rmt_tx_wait_all_done` timeout path completely
+- [ ] Remove job/control worker WDT hangs on motion failures
+- [ ] Add deterministic recovery after motion error (`busy -> alarm/idle` cleanup)
 
-- [ ] Переключатель в UI: `Homing enabled/disabled` (по умолчанию off для станков без концевиков)
-- [ ] Двухфазный homing по осям X/Y:
-  - [ ] fast seek
-  - [ ] pull-off
-  - [ ] slow seek
-  - [ ] set machine zero
-- [ ] Timeout, инверсия логики концевиков, проверка "концевик уже активен до старта"
+### 1.4 Homing baseline
+- [x] UI behavior split for machines with/without homing (Set Zero fallback)
+- [x] Axis homing primitives started (seek/pull-off logic introduced)
+- [x] Full 2-pass homing flow per axis (fast seek -> pull-off -> slow seek)
+- [x] Timeout and "switch already active before start" checks
+- [ ] Limit polarity inversion and per-axis homing direction fully validated
 
-## 4) Planner и качество траекторий
+## Stage 2 - Motion Quality + Throughput
 
-- [ ] Нормальный planner: ускорение/торможение, junction handling, look-ahead
-- [ ] Параллельные XY-движения с корректной синхронизацией скоростей (без рывков)
-- [ ] Настройки jerk/accel в конфиге и UI
+### 2.1 Planner quality
+- [x] Linear XY moves and basic queueing work
+- [ ] Acceleration/deceleration planner
+- [ ] Junction handling / look-ahead for smooth corners
+- [ ] Unified feed planning for vector + raster travel/print paths
 
-## 5) Jobs pipeline
+### 2.2 Raster speed pipeline
+- [x] Row/line based execution path exists
+- [x] Empty-zone skipping and faster no-laser travel are partially implemented
+- [ ] Complete line streaming executor (low memory + no stalls + predictable timing)
+- [ ] Improve overscan handling and turn-around strategy
+- [ ] Add tuning presets for fast/quality raster modes
 
-- [ ] Завершить построчный streaming executor для raster (устойчивый, без регрессий)
-- [ ] Улучшить skip-пустых зон и быстрые travel-переходы (с контролем качества)
-- [ ] Привести поведение `abort -> run` к полностью предсказуемому состоянию
-- [ ] Проверить консистентность замены job с одинаковым/новым `jobId`
+### 2.3 Job lifecycle correctness
+- [x] Pause/resume/abort commands are available
+- [ ] Make `abort -> run next job` fully deterministic every time
+- [ ] Fix all stale job data cases when replacing same/new `jobId`
+- [ ] Ensure job resume state persistence rules are explicit and safe
 
-## 6) Laser control и материалы
+## Stage 3 - Laser Process Control
 
-- [ ] Профили материалов (картон/фанера/акрил и т.д.): power/feed/dpi presets
-- [ ] Отдельные режимы laser power:
-  - [ ] constant power (binary/vector)
-  - [ ] grayscale modulation
-  - [ ] dither mode
-- [ ] Калибровочная таблица `requested power -> effective output` (по материалу)
+### 3.1 Power modes
+- [x] Binary, grayscale, dither processing modes are available
+- [x] Vector and raster text modes are available
+- [ ] Strict "constant-power" mode path (no implicit grayscale modulation)
+- [ ] Better low-power linearity mapping (`requested -> effective`)
+- [ ] Separate travel/power behavior contract per job type
 
-## 7) UI/UX
+### 3.2 Material presets
+- [ ] Material profile system (cardboard, plywood, acrylic, etc.)
+- [ ] Preset bundles: power/feed/dpi/pass count
+- [ ] User calibration workflow (test pattern -> recommended range)
 
-- [ ] Доработать страницу Upload:
-  - [ ] единый сценарий выбора типа job (image/text/primitive)
-  - [ ] сохранение ключевых параметров (debounced persistence)
-  - [ ] понятные tooltips по параметрам
-- [ ] Улучшить progress/ETA и отображение текущей фазы выполнения job
-- [ ] Добавить явную индикацию alarm/estop/lid/limit в статусе
+## Stage 4 - UI/UX and Operator Flow
 
-## 8) GRBL compatibility (MVP -> usable)
+### 4.1 Upload workflow
+- [x] Upload tab supports multiple job types (image/text/primitive)
+- [x] Key parameters persistence with debounced save exists
+- [ ] Improve mobile layout consistency for all parameter groups
+- [~] Add clearer contextual hints for risky settings (power/feed/dpi)
 
-- [ ] Расширить покрытие G-code (core laser workflows)
-- [ ] Проверить корректность realtime-команд и статус-репортов под LaserGRBL/UGS
-- [ ] Свести настройки `$` с runtime-config без конфликтов
+### 4.2 Runtime controls
+- [x] Progress feedback is present
+- [ ] Better progress model: phase + ETA + per-pass indicators
+- [ ] Alarm banner with explicit cause and recovery action
+- [ ] Unified controls behavior across AP mode and STA mode
 
-## 9) Тестирование и эксплуатация
+### 4.3 Text and vector UX
+- [x] Vector text mode exists (including fill mode support)
+- [x] Additional glyph coverage has been extended
+- [ ] Finalize clean default font set and preview parity with engraving output
+- [x] Add predictable typography controls (size/box/alignment/line-height/letter-spacing)
 
-- [ ] Добавить smoke-тесты API сценариев (run/pause/resume/abort/home)
-- [ ] Добавить hardware bring-up чеклист (пины, EN, DIR, STEP, limits, PWM)
-- [ ] Добавить регрессионный набор тестовых jobs (raster/text/primitive)
+## Stage 5 - GRBL Compatibility
 
-## 10) Документация
+- [x] GRBL serial MVP exists (status, basic commands, basic motion)
+- [ ] Expand G-code coverage for common LaserGRBL/UGS workflows
+- [ ] Verify realtime behavior under host streaming load
+- [ ] Align `$` settings behavior with runtime machine config rules
 
-- [ ] Зафиксировать стабильную pinout-матрицу для ESP32-S3 платы и типовых драйверов
-- [ ] Описать полностью workflow "из коробки" (первый запуск -> первая гравировка)
-- [ ] Синхронизировать `docs/architecture.md` с фактической реализацией сервисов
+## Stage 6 - Testing, Diagnostics, Docs
+
+### 6.1 Automated checks
+- [ ] API smoke tests (`run/pause/resume/abort/home/zero/alarm`)
+- [ ] Regression suite for raster/vector/text jobs
+- [ ] Error-injection tests for motion timeout and storage failures
+
+### 6.2 Hardware diagnostics
+- [~] Basic bring-up flows are known from manual testing
+- [ ] Formal hardware checklist doc (pins, EN, STEP/DIR, limits, PWM, PSU)
+- [ ] Runtime diagnostics page for live safety pin states and motion backend health
+
+### 6.3 Documentation
+- [x] Root and firmware README improved
+- [ ] Keep architecture doc synced with actual service boundaries
+- [ ] Add "first boot -> first engraving" operator guide
+- [ ] Add troubleshooting matrix (laser weak output, WDT, RMT timeout, job load errors)
