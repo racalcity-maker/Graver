@@ -19,10 +19,24 @@ constexpr const char *kTag = "web";
 constexpr size_t kMaxJsonBodyBytes = 256 * 1024;
 constexpr size_t kMaxRasterBodyBytes = 4 * 1024 * 1024;
 constexpr uint32_t kApShutdownDelayMs = 15000;
+constexpr const char *kCorsAllowOrigin = "*";
+constexpr const char *kCorsAllowMethods = "GET,POST,OPTIONS";
+constexpr const char *kCorsAllowHeaders = "Content-Type,X-Job-Id,X-Chunk-Offset,X-Chunk-Total";
+constexpr const char *kCorsMaxAge = "600";
+constexpr const char *kCorsAllowPrivateNetwork = "true";
 
 }  // namespace
 
+void ApplyCorsHeaders(httpd_req_t *request) {
+  httpd_resp_set_hdr(request, "Access-Control-Allow-Origin", kCorsAllowOrigin);
+  httpd_resp_set_hdr(request, "Access-Control-Allow-Methods", kCorsAllowMethods);
+  httpd_resp_set_hdr(request, "Access-Control-Allow-Headers", kCorsAllowHeaders);
+  httpd_resp_set_hdr(request, "Access-Control-Max-Age", kCorsMaxAge);
+  httpd_resp_set_hdr(request, "Access-Control-Allow-Private-Network", kCorsAllowPrivateNetwork);
+}
+
 esp_err_t SendSimpleResponse(httpd_req_t *request, const int status_code, const char *body) {
+  ApplyCorsHeaders(request);
   switch (status_code) {
     case 202:
       httpd_resp_set_status(request, "202 Accepted");
@@ -63,6 +77,7 @@ esp_err_t SendJsonResponse(httpd_req_t *request, cJSON *root) {
     return ESP_ERR_NO_MEM;
   }
 
+  ApplyCorsHeaders(request);
   httpd_resp_set_status(request, "200 OK");
   httpd_resp_set_type(request, "application/json");
   const esp_err_t err = httpd_resp_sendstr(request, body);
@@ -228,15 +243,18 @@ esp_err_t WebServer::HandleStatus(httpd_req_t *request) {
   const char *network_mode = server->network_.staConnected() ? "sta" : (server->network_.apActive() ? "ap" : "idle");
   const std::string sta_ip = server->network_.staIp();
 
-  char body[768];
+  char body[896];
   std::snprintf(
       body, sizeof(body),
-      "{\"state\":\"%s\",\"homed\":%s,\"estopActive\":%s,\"lidOpen\":%s,\"limitActive\":%s,\"laserArmed\":%s,\"motorsHeld\":%s,\"motionBusy\":%s,\"motionOp\":\"%s\",\"x\":%.3f,\"y\":%.3f,\"activeJobId\":\"%s\",\"message\":\"%s\",\"jobRowsDone\":%u,\"jobRowsTotal\":%u,\"jobProgressPercent\":%u,\"networkMode\":\"%s\",\"staConnected\":%s,\"staIp\":\"%s\",\"apActive\":%s}",
+      "{\"state\":\"%s\",\"homed\":%s,\"estopActive\":%s,\"lidOpen\":%s,\"limitActive\":%s,\"laserArmed\":%s,\"motorsHeld\":%s,\"motionBusy\":%s,\"motionOp\":\"%s\",\"x\":%.3f,\"y\":%.3f,\"wx\":%.3f,\"wy\":%.3f,\"mx\":%.3f,\"my\":%.3f,\"workOffsetX\":%.3f,\"workOffsetY\":%.3f,\"activeJobId\":\"%s\",\"message\":\"%s\",\"jobRowsDone\":%u,\"jobRowsTotal\":%u,\"jobProgressPercent\":%u,\"networkMode\":\"%s\",\"staConnected\":%s,\"staIp\":\"%s\",\"apActive\":%s}",
       shared::ToString(status.state), status.homed ? "true" : "false", status.estopActive ? "true" : "false",
       status.lidOpen ? "true" : "false", status.limitActive ? "true" : "false", status.laserArmed ? "true" : "false",
       status.motorsHeld ? "true" : "false", status.motionBusy ? "true" : "false",
       shared::ToString(status.motionOperation),
-      static_cast<double>(status.position.x), static_cast<double>(status.position.y), status.activeJobId.c_str(),
+      static_cast<double>(status.position.x), static_cast<double>(status.position.y), static_cast<double>(status.position.x),
+      static_cast<double>(status.position.y), static_cast<double>(status.machinePosition.x),
+      static_cast<double>(status.machinePosition.y), static_cast<double>(status.workOffset.x),
+      static_cast<double>(status.workOffset.y), status.activeJobId.c_str(),
       status.message.c_str(), static_cast<unsigned>(status.jobRowsDone), static_cast<unsigned>(status.jobRowsTotal),
       static_cast<unsigned>(status.jobProgressPercent), network_mode,
       server->network_.staConnected() ? "true" : "false", sta_ip.c_str(), server->network_.apActive() ? "true" : "false");
@@ -729,6 +747,12 @@ esp_err_t WebServer::HandleStop(httpd_req_t *request) {
   const esp_err_t err = server->control_.stop();
   return err == ESP_OK ? SendSimpleResponse(request, 202, "{\"ok\":true}")
                        : SendErrNameResponse(request, 409, "stop-failed", err);
+}
+
+esp_err_t WebServer::HandleApiOptions(httpd_req_t *request) {
+  ApplyCorsHeaders(request);
+  httpd_resp_set_status(request, "204 No Content");
+  return httpd_resp_send(request, nullptr, 0);
 }
 
 }  // namespace web

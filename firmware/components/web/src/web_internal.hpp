@@ -9,6 +9,7 @@ struct cJSON;
 
 namespace web {
 
+void ApplyCorsHeaders(httpd_req_t *request);
 esp_err_t SendSimpleResponse(httpd_req_t *request, int status_code, const char *body);
 esp_err_t SendErrNameResponse(httpd_req_t *request, int status_code, const char *error_code, esp_err_t err);
 esp_err_t SendJsonResponse(httpd_req_t *request, cJSON *root);

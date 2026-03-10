@@ -40,6 +40,8 @@ struct MachineStatus {
   bool motionBusy;
   MotionOperation motionOperation;
   PositionMm position;
+  PositionMm machinePosition;
+  PositionMm workOffset;
   std::string activeJobId;
   std::string message;
   uint32_t jobRowsDone;

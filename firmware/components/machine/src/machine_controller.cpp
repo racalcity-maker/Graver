@@ -118,7 +118,10 @@ shared::MachineStatus MachineController::status() {
   current_status.laserArmed = laser_.isArmed();
   current_status.motionBusy = motion_.isBusy();
   current_status.motionOperation = motion_.activeOperation();
-  current_status.position = motion_.position();
+  const motion::MotionStateSnapshot motion_state = motion_.snapshot();
+  current_status.position = motion_state.position;
+  current_status.machinePosition = motion_state.machinePosition;
+  current_status.workOffset = motion_state.workOffset;
   current_status.activeJobId = activeJobId_;
   current_status.message = message_;
   return current_status;

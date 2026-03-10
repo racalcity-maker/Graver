@@ -422,13 +422,15 @@ void GrblService::sendStatusReport() {
   if (!pins.empty()) {
     std::snprintf(buffer, sizeof(buffer),
                   "<%s|MPos:%.3f,%.3f,0.000|WPos:%.3f,%.3f,0.000|FS:%" PRIu32 ",%" PRIu32 "|Pn:%s>",
-                  state.c_str(), static_cast<double>(status.position.x), static_cast<double>(status.position.y),
+                  state.c_str(), static_cast<double>(status.machinePosition.x),
+                  static_cast<double>(status.machinePosition.y),
                   static_cast<double>(status.position.x), static_cast<double>(status.position.y), feed, spindle,
                   pins.c_str());
   } else {
     std::snprintf(buffer, sizeof(buffer),
                   "<%s|MPos:%.3f,%.3f,0.000|WPos:%.3f,%.3f,0.000|FS:%" PRIu32 ",%" PRIu32 ">",
-                  state.c_str(), static_cast<double>(status.position.x), static_cast<double>(status.position.y),
+                  state.c_str(), static_cast<double>(status.machinePosition.x),
+                  static_cast<double>(status.machinePosition.y),
                   static_cast<double>(status.position.x), static_cast<double>(status.position.y), feed, spindle);
   }
   sendLine(buffer);

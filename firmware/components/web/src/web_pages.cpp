@@ -1,4 +1,5 @@
 #include "web/web_server.hpp"
+#include "web_internal.hpp"
 
 #include "esp_log.h"
 
@@ -90,6 +91,7 @@ const EmbeddedAsset *FindAsset(const char *uri) {
 }
 
 esp_err_t SendTextResponse(httpd_req_t *request, const char *contentType, const char *body, const size_t length) {
+  ApplyCorsHeaders(request);
   httpd_resp_set_status(request, "200 OK");
   httpd_resp_set_type(request, contentType);
   httpd_resp_set_hdr(request, "Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
@@ -119,6 +121,7 @@ esp_err_t WebServer::HandleIndex(httpd_req_t *request) {
 esp_err_t WebServer::HandleAsset(httpd_req_t *request) {
   const EmbeddedAsset *asset = FindAsset(request->uri);
   if (asset == nullptr) {
+    ApplyCorsHeaders(request);
     return httpd_resp_send_err(request, HTTPD_404_NOT_FOUND, "Asset not found");
   }
 
@@ -127,6 +130,7 @@ esp_err_t WebServer::HandleAsset(httpd_req_t *request) {
 }
 
 esp_err_t WebServer::HandleFavicon(httpd_req_t *request) {
+  ApplyCorsHeaders(request);
   httpd_resp_set_status(request, "204 No Content");
   return httpd_resp_send(request, nullptr, 0);
 }

@@ -23,6 +23,8 @@ constexpr const char *kReasonEstop = "e-stop active";
 constexpr const char *kReasonLid = "lid interlock open";
 constexpr const char *kReasonLimit = "limit switch hit";
 constexpr const char *kReasonFaultNotCleared = "fault still active";
+constexpr float kReturnToZeroFeedMmMin = 1200.0f;
+constexpr TickType_t kReturnToZeroWait = pdMS_TO_TICKS(10000);
 
 }  // namespace
 
@@ -219,6 +221,8 @@ shared::MachineStatus ControlService::status() {
   current.motionBusy = motion_state.pending || motion_state.activeOperation != shared::MotionOperation::None;
   current.motionOperation = motion_state.activeOperation;
   current.position = motion_state.position;
+  current.machinePosition = motion_state.machinePosition;
+  current.workOffset = motion_state.workOffset;
   current.jobRowsDone = jobRowsDone_.load();
   current.jobRowsTotal = jobRowsTotal_.load();
   current.jobProgressPercent = jobProgressPercent_.load();
@@ -236,7 +240,13 @@ void ControlService::JobEntry(void *context) {
     vTaskDelete(nullptr);
     return;
   }
-  job_context->first->jobLoop(std::move(job_context->second));
+  ControlService *service = job_context->first;
+  service->jobLoop(std::move(job_context->second));
+  service->lockState();
+  if (service->jobTask_ == xTaskGetCurrentTaskHandle()) {
+    service->jobTask_ = nullptr;
+  }
+  service->unlockState();
   vTaskDelete(nullptr);
 }
 
@@ -283,40 +293,21 @@ void ControlService::workerLoop() {
     if (err != ESP_OK) {
       if (err == ESP_ERR_INVALID_STATE || err == ESP_ERR_TIMEOUT) {
         if (command.type == CommandType::RunJob && stopRequested_.load()) {
-          stopRequested_.store(false);
-          pauseRequested_.store(false);
           const bool aborted = abortRequested_.exchange(false);
-          const motion::MotionStateSnapshot motion_state = motion_.snapshot();
-          if (aborted && motion_state.homed) {
-            const esp_err_t zero_err = motion_.goToZero(1200.0f);
-            if (zero_err == ESP_OK) {
-              while (true) {
-                const motion::MotionStateSnapshot loop_state = motion_.snapshot();
-                if (!loop_state.pending && loop_state.activeOperation == shared::MotionOperation::None) {
-                  break;
-                }
-                vTaskDelay(pdMS_TO_TICKS(5));
-              }
-            }
-          }
-          lockState();
-          activeJobId_.clear();
-          state_ = shared::MachineState::Idle;
-          message_ = aborted ? "job aborted" : "job stopped";
-          unlockState();
-          jobRowsDone_.store(0);
-          jobRowsTotal_.store(0);
-          jobProgressPercent_.store(0);
-          ESP_LOGW(kTag, "%s", aborted ? "Job aborted" : "Job stopped");
+          finalizeStoppedJob(aborted);
         } else if (command.type == CommandType::RunJob && !motion_.snapshot().homed) {
           setState(shared::MachineState::Idle, "set zero first");
-          jobRowsDone_.store(0);
-          jobRowsTotal_.store(0);
-          jobProgressPercent_.store(0);
+          resetJobProgress();
           ESP_LOGW(kTag, "Run job rejected: work zero is not set");
         } else if (command.type == CommandType::Pause || command.type == CommandType::Resume ||
                    command.type == CommandType::Abort || command.type == CommandType::ClearAlarm) {
           ESP_LOGW(kTag, "Runtime command rejected: %s", esp_err_to_name(err));
+        } else if (err == ESP_ERR_TIMEOUT) {
+          setAlarm("motion timeout");
+          if (command.type == CommandType::RunJob) {
+            resetJobProgress();
+          }
+          ESP_LOGE(kTag, "Command timeout, switched to alarm");
         } else {
           setState(shared::MachineState::Idle, "busy");
           ESP_LOGW(kTag, "Command rejected while busy: %s", esp_err_to_name(err));
@@ -324,9 +315,7 @@ void ControlService::workerLoop() {
       } else {
         setAlarm("command failed");
         if (command.type == CommandType::RunJob) {
-          jobRowsDone_.store(0);
-          jobRowsTotal_.store(0);
-          jobProgressPercent_.store(0);
+          resetJobProgress();
         }
         ESP_LOGE(kTag, "Command failed: %s", esp_err_to_name(err));
       }
@@ -564,38 +553,13 @@ esp_err_t ControlService::execute(const Command &command) {
       }
 
       if (stopRequested_.load()) {
-        stopRequested_.store(false);
-        pauseRequested_.store(false);
         const bool aborted = abortRequested_.exchange(false);
-        const motion::MotionStateSnapshot motion_state = motion_.snapshot();
-        if (aborted && motion_state.homed) {
-          const esp_err_t zero_err = motion_.goToZero(1200.0f);
-          if (zero_err == ESP_OK) {
-            while (true) {
-              const motion::MotionStateSnapshot loop_state = motion_.snapshot();
-              if (!loop_state.pending && loop_state.activeOperation == shared::MotionOperation::None) {
-                break;
-              }
-              vTaskDelay(pdMS_TO_TICKS(5));
-            }
-          }
-        }
-        lockState();
-        activeJobId_.clear();
-        state_ = shared::MachineState::Idle;
-        message_ = aborted ? "job aborted" : "job stopped";
-        unlockState();
-        jobRowsDone_.store(0);
-        jobRowsTotal_.store(0);
-        jobProgressPercent_.store(0);
-        ESP_LOGW(kTag, "%s", aborted ? "Job aborted" : "Job stopped");
+        finalizeStoppedJob(aborted);
         return ESP_OK;
       }
 
       setAlarm("command failed");
-      jobRowsDone_.store(0);
-      jobRowsTotal_.store(0);
-      jobProgressPercent_.store(0);
+      resetJobProgress();
       ESP_LOGE(kTag, "Job failed: %s", esp_err_to_name(command.result));
       return command.result;
     }
@@ -653,12 +617,22 @@ void ControlService::jobLoop(jobs::LoadedJob job) {
     lockState();
     jobTask_ = nullptr;
     activeJobId_.clear();
-    if (run_err == ESP_OK) {
+    const bool stopped = stopRequested_.load();
+    if (run_err == ESP_OK && !stopped) {
       state_ = shared::MachineState::Idle;
       message_ = "job complete";
       jobRowsDone_.store(completed_units);
       jobRowsTotal_.store(completed_units);
       jobProgressPercent_.store(100);
+    } else if (stopped) {
+      state_ = shared::MachineState::Idle;
+      message_ = abortRequested_.load() ? "job aborted" : "job stopped";
+      jobRowsDone_.store(0);
+      jobRowsTotal_.store(0);
+      jobProgressPercent_.store(0);
+      stopRequested_.store(false);
+      pauseRequested_.store(false);
+      abortRequested_.store(false);
     } else {
       state_ = shared::MachineState::Alarm;
       message_ = "job task queue unavailable";
@@ -695,6 +669,47 @@ void ControlService::setAlarm(const std::string &message) {
   state_ = shared::MachineState::Alarm;
   message_ = message;
   unlockState();
+}
+
+void ControlService::resetJobProgress() {
+  jobRowsDone_.store(0);
+  jobRowsTotal_.store(0);
+  jobProgressPercent_.store(0);
+}
+
+void ControlService::clearActiveJobLocked(const shared::MachineState state, const std::string &message) {
+  activeJobId_.clear();
+  state_ = state;
+  message_ = message;
+}
+
+void ControlService::finalizeStoppedJob(const bool aborted) {
+  const motion::MotionStateSnapshot motion_state_before_stop = motion_.snapshot();
+  stopRequested_.store(false);
+  pauseRequested_.store(false);
+  abortRequested_.store(false);
+  (void)motion_.stop();
+  (void)laser_.forceOff();
+  (void)laser_.disarm();
+
+  if (aborted && motion_state_before_stop.homed) {
+    const esp_err_t zero_err = motion_.goToZero(kReturnToZeroFeedMmMin);
+    if (zero_err == ESP_OK) {
+      const esp_err_t wait_err = motion_.waitForIdle(kReturnToZeroWait);
+      if (wait_err != ESP_OK || motion_.lastError() != ESP_OK) {
+        ESP_LOGW(kTag, "Go-to-zero after abort did not finish cleanly: wait=%s motion=%s",
+                 esp_err_to_name(wait_err), esp_err_to_name(motion_.lastError()));
+      }
+    } else {
+      ESP_LOGW(kTag, "Go-to-zero after abort rejected: %s", esp_err_to_name(zero_err));
+    }
+  }
+
+  lockState();
+  clearActiveJobLocked(shared::MachineState::Idle, aborted ? "job aborted" : "job stopped");
+  unlockState();
+  resetJobProgress();
+  ESP_LOGW(kTag, "%s", aborted ? "Job aborted" : "Job stopped");
 }
 
 void ControlService::tripAlarm(const std::string &reason, const bool estopLatched) {

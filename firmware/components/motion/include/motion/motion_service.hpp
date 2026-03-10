@@ -30,6 +30,8 @@ struct RasterSegment {
 
 struct MotionStateSnapshot {
   shared::PositionMm position;
+  shared::PositionMm machinePosition;
+  shared::PositionMm workOffset;
   bool homed;
   bool motorsHeld;
   bool pending;
@@ -101,7 +103,8 @@ class MotionService {
 
   shared::MachineConfig config_;
   hal::BoardHal &boardHal_;
-  shared::PositionMm position_;
+  shared::PositionMm machinePosition_;
+  shared::PositionMm workOffset_;
   bool homed_;
   bool motorsHeld_;
   bool pending_;

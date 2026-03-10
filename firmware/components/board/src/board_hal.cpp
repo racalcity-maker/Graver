@@ -206,6 +206,14 @@ esp_err_t BoardHal::moveXYLinear(const bool xPositive, const uint32_t xSteps, co
   const bool use_y_secondary = config_.yAxis.dualMotor && config_.yAxis.secondaryUsesSeparateDriver;
   const bool use_x_axis = xSteps > 0U;
   const bool use_y_axis = ySteps > 0U;
+  const auto abort_all_axes = [&]() {
+    if (use_x_axis) {
+      (void)abortAxisTransmission(xAxisRmt_, use_x_secondary);
+    }
+    if (use_y_axis) {
+      (void)abortAxisTransmission(yAxisRmt_, use_y_secondary);
+    }
+  };
 
   std::array<rmt_symbol_word_t, kRmtChunkSteps> x_symbols{};
   std::array<rmt_symbol_word_t, kRmtChunkSteps> y_symbols{};
@@ -213,12 +221,7 @@ esp_err_t BoardHal::moveXYLinear(const bool xPositive, const uint32_t xSteps, co
   uint32_t remaining = major_steps;
   while (remaining > 0U) {
     if (stopRequested_.load() || isSafetyTripActive()) {
-      if (use_x_axis) {
-        (void)abortAxisTransmission(xAxisRmt_, use_x_secondary);
-      }
-      if (use_y_axis) {
-        (void)abortAxisTransmission(yAxisRmt_, use_y_secondary);
-      }
+      abort_all_axes();
       return ESP_ERR_INVALID_STATE;
     }
 
@@ -244,21 +247,37 @@ esp_err_t BoardHal::moveXYLinear(const bool xPositive, const uint32_t xSteps, co
     }
 
     if (use_x_axis) {
-      ESP_RETURN_ON_ERROR(transmitAxisSymbols(xAxisRmt_, use_x_secondary, x_symbols.data(), chunk_steps), kTag,
-                          "Failed to transmit X chunk");
+      const esp_err_t tx_err = transmitAxisSymbols(xAxisRmt_, use_x_secondary, x_symbols.data(), chunk_steps);
+      if (tx_err != ESP_OK) {
+        abort_all_axes();
+        ESP_LOGE(kTag, "Failed to transmit X chunk: %s", esp_err_to_name(tx_err));
+        return tx_err;
+      }
     }
     if (use_y_axis) {
-      ESP_RETURN_ON_ERROR(transmitAxisSymbols(yAxisRmt_, use_y_secondary, y_symbols.data(), chunk_steps), kTag,
-                          "Failed to transmit Y chunk");
+      const esp_err_t tx_err = transmitAxisSymbols(yAxisRmt_, use_y_secondary, y_symbols.data(), chunk_steps);
+      if (tx_err != ESP_OK) {
+        abort_all_axes();
+        ESP_LOGE(kTag, "Failed to transmit Y chunk: %s", esp_err_to_name(tx_err));
+        return tx_err;
+      }
     }
 
     if (use_x_axis) {
-      ESP_RETURN_ON_ERROR(waitForAxisTransmission(xAxisRmt_, use_x_secondary, chunk_steps, stepDelayUs), kTag,
-                          "Failed waiting for X chunk");
+      const esp_err_t wait_err = waitForAxisTransmission(xAxisRmt_, use_x_secondary, chunk_steps, stepDelayUs);
+      if (wait_err != ESP_OK) {
+        abort_all_axes();
+        ESP_LOGE(kTag, "Failed waiting for X chunk: %s", esp_err_to_name(wait_err));
+        return wait_err;
+      }
     }
     if (use_y_axis) {
-      ESP_RETURN_ON_ERROR(waitForAxisTransmission(yAxisRmt_, use_y_secondary, chunk_steps, stepDelayUs), kTag,
-                          "Failed waiting for Y chunk");
+      const esp_err_t wait_err = waitForAxisTransmission(yAxisRmt_, use_y_secondary, chunk_steps, stepDelayUs);
+      if (wait_err != ESP_OK) {
+        abort_all_axes();
+        ESP_LOGE(kTag, "Failed waiting for Y chunk: %s", esp_err_to_name(wait_err));
+        return wait_err;
+      }
     }
 
     remaining -= static_cast<uint32_t>(chunk_steps);
@@ -482,7 +501,8 @@ esp_err_t BoardHal::abortAxisTransmission(AxisRmtResources &axis, const bool use
 esp_err_t BoardHal::waitForAxisTransmission(AxisRmtResources &axis, const bool useSecondary, const size_t chunkSteps,
                                             const uint32_t stepDelayUs) {
   if (stopRequested_.load() || isSafetyTripActive()) {
-    return abortAxisTransmission(axis, useSecondary);
+    (void)abortAxisTransmission(axis, useSecondary);
+    return ESP_ERR_INVALID_STATE;
   }
 
   const uint64_t expected_us = static_cast<uint64_t>(chunkSteps) * static_cast<uint64_t>(stepDelayUs);

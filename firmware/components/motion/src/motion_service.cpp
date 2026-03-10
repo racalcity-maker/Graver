@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 
 #include <algorithm>
 #include <cmath>
@@ -23,12 +24,50 @@ constexpr float kDefaultFrameFeedMmMin = 1200.0f;
 constexpr uint32_t kHomingChunkSteps = 16;
 constexpr float kMinHomingFeedMmMin = 1.0f;
 constexpr float kMinHomingPullOffMm = 0.1f;
+constexpr uint32_t kRasterYieldEverySegments = 24U;
 
 struct LinearMovePlan {
   uint32_t xSteps;
   uint32_t ySteps;
   uint32_t stepDelayUs;
 };
+
+float ResolveFeedWithMotionLimits(const shared::MachineConfig &config, const float deltaXmm, const float deltaYmm,
+                                  const float requestedFeedMmMin) {
+  const bool move_x = std::fabs(deltaXmm) > 0.0f;
+  const bool move_y = std::fabs(deltaYmm) > 0.0f;
+
+  float max_feed = requestedFeedMmMin;
+  if (move_x) {
+    max_feed = std::min(max_feed, std::max(1.0f, config.xAxis.maxRateMmMin));
+  }
+  if (move_y) {
+    max_feed = std::min(max_feed, std::max(1.0f, config.yAxis.maxRateMmMin));
+  }
+
+  const float distance_mm = std::sqrt((deltaXmm * deltaXmm) + (deltaYmm * deltaYmm));
+  if (distance_mm <= 0.0f) {
+    return std::max(1.0f, max_feed);
+  }
+
+  float accel_limit_mm_s2 = 0.0f;
+  if (move_x) {
+    accel_limit_mm_s2 =
+        accel_limit_mm_s2 > 0.0f ? std::min(accel_limit_mm_s2, config.xAxis.accelerationMmS2) : config.xAxis.accelerationMmS2;
+  }
+  if (move_y) {
+    accel_limit_mm_s2 =
+        accel_limit_mm_s2 > 0.0f ? std::min(accel_limit_mm_s2, config.yAxis.accelerationMmS2) : config.yAxis.accelerationMmS2;
+  }
+
+  if (accel_limit_mm_s2 > 0.0f) {
+    // Triangular-profile approximation: v_peak^2 / a ~= distance.
+    const float accel_limited_feed = std::sqrt(accel_limit_mm_s2 * distance_mm) * 60.0f;
+    max_feed = std::min(max_feed, std::max(1.0f, accel_limited_feed));
+  }
+
+  return std::max(1.0f, max_feed);
+}
 
 esp_err_t BuildLinearMovePlan(const shared::MachineConfig &config, const float deltaXmm, const float deltaYmm,
                               const float feedMmMin, LinearMovePlan &plan) {
@@ -51,7 +90,8 @@ esp_err_t BuildLinearMovePlan(const shared::MachineConfig &config, const float d
     return ESP_ERR_INVALID_ARG;
   }
 
-  const float seconds = (distance_mm * 60.0f) / feedMmMin;
+  const float effective_feed_mm_min = ResolveFeedWithMotionLimits(config, deltaXmm, deltaYmm, feedMmMin);
+  const float seconds = (distance_mm * 60.0f) / effective_feed_mm_min;
   const float step_delay = (seconds * 1000000.0f) / static_cast<float>(major_steps);
   plan.xSteps = x_steps;
   plan.ySteps = y_steps;
@@ -64,7 +104,8 @@ esp_err_t BuildLinearMovePlan(const shared::MachineConfig &config, const float d
 MotionService::MotionService(const shared::MachineConfig &config, hal::BoardHal &boardHal)
     : config_(config),
       boardHal_(boardHal),
-      position_{0.0f, 0.0f},
+      machinePosition_{0.0f, 0.0f},
+      workOffset_{0.0f, 0.0f},
       homed_(false),
       motorsHeld_(false),
       pending_(false),
@@ -152,9 +193,11 @@ esp_err_t MotionService::jog(const AxisId axis, const float distanceMm, const fl
   }
 
   const MotionStateSnapshot state = snapshot();
-  const float target_x_mm = axis == AxisId::X ? state.position.x + distanceMm : state.position.x;
-  const float target_y_mm = axis == AxisId::Y ? state.position.y + distanceMm : state.position.y;
-  ESP_RETURN_ON_ERROR(validateTargetPosition(target_x_mm, target_y_mm, shared::MotionOperation::Jog), kTag,
+  const float target_work_x_mm = axis == AxisId::X ? state.position.x + distanceMm : state.position.x;
+  const float target_work_y_mm = axis == AxisId::Y ? state.position.y + distanceMm : state.position.y;
+  const float target_machine_x_mm = target_work_x_mm + state.workOffset.x;
+  const float target_machine_y_mm = target_work_y_mm + state.workOffset.y;
+  ESP_RETURN_ON_ERROR(validateTargetPosition(target_machine_x_mm, target_machine_y_mm, shared::MotionOperation::Jog), kTag,
                       "Jog target is outside work area");
 
   return enqueueCommand({shared::MotionOperation::Jog, axis, distanceMm, feedMmMin, 0.0f, 0.0f});
@@ -166,7 +209,7 @@ esp_err_t MotionService::setZero() {
     unlockState();
     return ESP_ERR_INVALID_STATE;
   }
-  position_ = {0.0f, 0.0f};
+  workOffset_ = machinePosition_;
   homed_ = true;
   lastError_ = ESP_OK;
   unlockState();
@@ -194,7 +237,9 @@ esp_err_t MotionService::moveTo(const float xMm, const float yMm, const float fe
   if (!state.started || state.pending || state.activeOperation != shared::MotionOperation::None || !state.homed) {
     return ESP_ERR_INVALID_STATE;
   }
-  ESP_RETURN_ON_ERROR(validateTargetPosition(xMm, yMm, shared::MotionOperation::MoveTo), kTag,
+  const float machine_x_mm = xMm + state.workOffset.x;
+  const float machine_y_mm = yMm + state.workOffset.y;
+  ESP_RETURN_ON_ERROR(validateTargetPosition(machine_x_mm, machine_y_mm, shared::MotionOperation::MoveTo), kTag,
                       "Move-to target is outside work area");
 
   return enqueueCommand({shared::MotionOperation::MoveTo, AxisId::X, 0.0f, feedMmMin, xMm, yMm});
@@ -205,7 +250,11 @@ esp_err_t MotionService::directMoveTo(const float xMm, const float yMm, const fl
   if (feedMmMin <= 0.0f) {
     return ESP_ERR_INVALID_ARG;
   }
-  ESP_RETURN_ON_ERROR(validateTargetPosition(xMm, yMm, operation), kTag, "Direct move target is outside work area");
+  const MotionStateSnapshot state = snapshot();
+  const float machine_target_x_mm = xMm + state.workOffset.x;
+  const float machine_target_y_mm = yMm + state.workOffset.y;
+  ESP_RETURN_ON_ERROR(validateTargetPosition(machine_target_x_mm, machine_target_y_mm, operation), kTag,
+                      "Direct move target is outside work area");
 
   shared::PositionMm start_position{};
   lockState();
@@ -215,10 +264,11 @@ esp_err_t MotionService::directMoveTo(const float xMm, const float yMm, const fl
   }
   activeOperation_ = operation;
   lastError_ = ESP_OK;
-  start_position = position_;
+  start_position = machinePosition_;
   unlockState();
 
-  const esp_err_t err = executeLinearMove(xMm - start_position.x, yMm - start_position.y, feedMmMin, operation);
+  const esp_err_t err = executeLinearMove(machine_target_x_mm - start_position.x, machine_target_y_mm - start_position.y,
+                                          feedMmMin, operation);
 
   lockState();
   lastError_ = err;
@@ -235,7 +285,10 @@ esp_err_t MotionService::executeRasterRow(const float rowYmm, const float startX
     return ESP_ERR_INVALID_ARG;
   }
 
-  ESP_RETURN_ON_ERROR(validateTargetPosition(startXmm, rowYmm, shared::MotionOperation::MoveTo), kTag,
+  const MotionStateSnapshot state = snapshot();
+  const float start_machine_x_mm = startXmm + state.workOffset.x;
+  const float start_machine_y_mm = rowYmm + state.workOffset.y;
+  ESP_RETURN_ON_ERROR(validateTargetPosition(start_machine_x_mm, start_machine_y_mm, shared::MotionOperation::MoveTo), kTag,
                       "Raster row start is outside work area");
 
   shared::PositionMm start_position{};
@@ -247,13 +300,13 @@ esp_err_t MotionService::executeRasterRow(const float rowYmm, const float startX
   }
   activeOperation_ = shared::MotionOperation::MoveTo;
   lastError_ = ESP_OK;
-  start_position = position_;
+  start_position = machinePosition_;
   motors_held = motorsHeld_;
   unlockState();
   boardHal_.setIgnoreLimitInputs(false);
 
-  esp_err_t err = executeLinearMove(startXmm - start_position.x, rowYmm - start_position.y, travelFeedMmMin,
-                                    shared::MotionOperation::MoveTo);
+  esp_err_t err = executeLinearMove(start_machine_x_mm - start_position.x, start_machine_y_mm - start_position.y,
+                                    travelFeedMmMin, shared::MotionOperation::MoveTo);
   if (err != ESP_OK) {
     (void)laser.forceOff();
     lockState();
@@ -295,7 +348,20 @@ esp_err_t MotionService::executeRasterRow(const float rowYmm, const float startX
       std::max(1.0f, (60.0f * 1000000.0f) / std::max(1.0f, travelFeedMmMin * x_steps_per_mm)));
 
   float delta_x_mm = 0.0f;
+  uint32_t processed_segments = 0U;
   for (size_t i = 0; i < segmentCount; ++i) {
+    const MotionStateSnapshot loop_state = snapshot();
+    if (loop_state.activeOperation == shared::MotionOperation::None || boardHal_.isEstopActive() ||
+        boardHal_.isLidOpen() || boardHal_.isAnyLimitActive()) {
+      (void)laser.forceOff();
+      (void)boardHal_.requestMotionStop();
+      lockState();
+      lastError_ = ESP_ERR_INVALID_STATE;
+      activeOperation_ = shared::MotionOperation::None;
+      unlockState();
+      return ESP_ERR_INVALID_STATE;
+    }
+
     const RasterSegment &segment = segments[i];
     const uint32_t segment_steps =
         static_cast<uint32_t>(std::lround(std::fabs(segment.lengthMm) * x_steps_per_mm));
@@ -327,11 +393,16 @@ esp_err_t MotionService::executeRasterRow(const float rowYmm, const float startX
 
     const float segment_mm = static_cast<float>(segment_steps) / x_steps_per_mm;
     delta_x_mm += reverse ? -segment_mm : segment_mm;
+
+    ++processed_segments;
+    if ((processed_segments % kRasterYieldEverySegments) == 0U) {
+      vTaskDelay(1);
+    }
   }
 
   lockState();
-  position_.x += delta_x_mm;
-  position_.y = rowYmm;
+  machinePosition_.x += delta_x_mm;
+  machinePosition_.y = start_machine_y_mm;
   lastError_ = ESP_OK;
   activeOperation_ = shared::MotionOperation::None;
   unlockState();
@@ -407,11 +478,15 @@ esp_err_t MotionService::stop() {
   xQueueReset(commandQueue_);
 
   lockState();
+  const bool was_busy = pending_ || activeOperation_ != shared::MotionOperation::None;
   pending_ = false;
-  if (activeOperation_ == shared::MotionOperation::None) {
-    lastError_ = ESP_OK;
-  }
+  activeOperation_ = shared::MotionOperation::None;
+  lastError_ = was_busy ? ESP_ERR_INVALID_STATE : ESP_OK;
   unlockState();
+
+  if (completionSemaphore_ != nullptr) {
+    (void)xSemaphoreGive(completionSemaphore_);
+  }
 
   ESP_LOGW(kTag, "Motion stop requested");
   return ESP_OK;
@@ -424,7 +499,9 @@ shared::PositionMm MotionService::position() const {
 MotionStateSnapshot MotionService::snapshot() const {
   MotionStateSnapshot state{};
   lockState();
-  state.position = position_;
+  state.machinePosition = machinePosition_;
+  state.workOffset = workOffset_;
+  state.position = {machinePosition_.x - workOffset_.x, machinePosition_.y - workOffset_.y};
   state.homed = homed_;
   state.motorsHeld = motorsHeld_;
   state.pending = pending_;
@@ -581,7 +658,7 @@ esp_err_t MotionService::executeHome() {
 
   if (!config_.safety.homingEnabled) {
     lockState();
-    position_ = {0.0f, 0.0f};
+    workOffset_ = machinePosition_;
     homed_ = true;
     unlockState();
     ESP_LOGI(kTag, "Homing disabled, work zero set at current position");
@@ -597,7 +674,7 @@ esp_err_t MotionService::executeHome() {
     ESP_RETURN_ON_ERROR(executeAxisHome(AxisId::X, config_.safety.homeXToMin, seek_feed, latch_feed, pull_off, timeout_ms),
                         kTag, "X homing failed");
     lockState();
-    position_.x = 0.0f;
+    machinePosition_.x = 0.0f;
     unlockState();
   }
 
@@ -605,11 +682,12 @@ esp_err_t MotionService::executeHome() {
     ESP_RETURN_ON_ERROR(executeAxisHome(AxisId::Y, config_.safety.homeYToMin, seek_feed, latch_feed, pull_off, timeout_ms),
                         kTag, "Y homing failed");
     lockState();
-    position_.y = 0.0f;
+    machinePosition_.y = 0.0f;
     unlockState();
   }
 
   lockState();
+  workOffset_ = machinePosition_;
   homed_ = true;
   unlockState();
   ESP_LOGI(kTag, "Homing complete");
@@ -720,6 +798,15 @@ esp_err_t MotionService::executeFrame() {
   }
 
   const MotionStateSnapshot state = snapshot();
+  const float frame_min_x_machine = state.workOffset.x;
+  const float frame_min_y_machine = state.workOffset.y;
+  const float frame_max_x_machine = state.workOffset.x + config_.xAxis.travelMm;
+  const float frame_max_y_machine = state.workOffset.y + config_.yAxis.travelMm;
+  ESP_RETURN_ON_ERROR(validateTargetPosition(frame_min_x_machine, frame_min_y_machine, shared::MotionOperation::Frame), kTag,
+                      "Frame origin is outside work area");
+  ESP_RETURN_ON_ERROR(validateTargetPosition(frame_max_x_machine, frame_max_y_machine, shared::MotionOperation::Frame), kTag,
+                      "Frame max corner is outside work area");
+
   ESP_LOGI(kTag, "Frame requested: width=%.3f height=%.3f feed=%.1f", static_cast<double>(config_.xAxis.travelMm),
            static_cast<double>(config_.yAxis.travelMm), static_cast<double>(frame_feed_mm_min));
 
@@ -735,7 +822,7 @@ esp_err_t MotionService::executeFrame() {
                       kTag, "Failed to trace frame edge 4");
 
   lockState();
-  position_ = {0.0f, 0.0f};
+  machinePosition_ = workOffset_;
   unlockState();
   ESP_LOGI(kTag, "Frame complete, returned to work zero");
   return ESP_OK;
@@ -786,11 +873,11 @@ esp_err_t MotionService::executeLinearMove(const float deltaXmm, const float del
   ESP_RETURN_ON_ERROR(move_err, kTag, "Linear move failed");
 
   lockState();
-  position_.x += deltaXmm;
-  position_.y += deltaYmm;
+  machinePosition_.x += deltaXmm;
+  machinePosition_.y += deltaYmm;
 
   if (operation == shared::MotionOperation::GoToZero) {
-    position_ = {0.0f, 0.0f};
+    machinePosition_ = workOffset_;
     ESP_LOGI(kTag, "Returned to work zero");
   }
   unlockState();

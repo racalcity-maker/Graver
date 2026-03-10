@@ -240,8 +240,7 @@ esp_err_t RasterExecutor::moveAndWait(const float xMm, const float yMm, const fl
     motion_.stop();
     return ESP_ERR_INVALID_STATE;
   }
-  ESP_RETURN_ON_ERROR(motion_.directMoveTo(xMm, yMm, feedMmMin, shared::MotionOperation::MoveTo), kTag,
-                      "Failed to execute direct raster move");
+  ESP_RETURN_ON_ERROR(motion_.moveTo(xMm, yMm, feedMmMin), kTag, "Failed to queue raster move");
   ESP_RETURN_ON_ERROR(waitForMotionIdle(stopRequested), kTag, "Failed while waiting for raster move to finish");
   return waitWhilePaused(stopRequested, pauseRequested, 0, 0);
 }

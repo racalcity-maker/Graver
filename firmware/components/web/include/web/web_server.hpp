@@ -13,7 +13,7 @@ namespace web {
 
 class WebServer {
  public:
- WebServer(control::ControlService &control, jobs::JobManager &jobs, storage::StorageService &storage,
+  WebServer(control::ControlService &control, jobs::JobManager &jobs, storage::StorageService &storage,
             network::NetworkService &network, shared::MachineConfig &config);
 
   esp_err_t start();
@@ -45,6 +45,7 @@ class WebServer {
   static esp_err_t HandleClearAlarm(httpd_req_t *request);
   static esp_err_t HandleFrame(httpd_req_t *request);
   static esp_err_t HandleStop(httpd_req_t *request);
+  static esp_err_t HandleApiOptions(httpd_req_t *request);
 
   esp_err_t registerRoutes();
   static WebServer *FromRequest(httpd_req_t *request);

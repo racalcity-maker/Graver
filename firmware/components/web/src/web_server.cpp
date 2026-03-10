@@ -204,6 +204,12 @@ esp_err_t WebServer::registerRoutes() {
   stop_route.handler = &WebServer::HandleStop;
   stop_route.user_ctx = this;
 
+  httpd_uri_t api_options_route{};
+  api_options_route.uri = "/api/*";
+  api_options_route.method = HTTP_OPTIONS;
+  api_options_route.handler = &WebServer::HandleApiOptions;
+  api_options_route.user_ctx = this;
+
   ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server_, &index_route), kTag, "Index route failed");
   ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server_, &asset_route), kTag, "Asset route failed");
   ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server_, &favicon_route), kTag, "Favicon route failed");
@@ -234,6 +240,7 @@ esp_err_t WebServer::registerRoutes() {
   ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server_, &diag_laser_route), kTag, "Diag laser route failed");
   ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server_, &frame_route), kTag, "Frame route failed");
   ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server_, &stop_route), kTag, "Stop route failed");
+  ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server_, &api_options_route), kTag, "API options route failed");
   return ESP_OK;
 }
 

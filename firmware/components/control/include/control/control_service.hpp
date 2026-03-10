@@ -97,6 +97,9 @@ class ControlService {
   bool isRuntimeCommand(const Command &command) const;
   bool isExclusiveCommand(const Command &command) const;
   void refreshMotionStateLocked();
+  void resetJobProgress();
+  void finalizeStoppedJob(bool aborted);
+  void clearActiveJobLocked(shared::MachineState state, const std::string &message);
 
   shared::MachineConfig config_;
   motion::MotionService &motion_;
