@@ -1,69 +1,85 @@
-# Frontend
+# Frontend (LaserGraver Studio)
 
-Frontend должен быть отдельным приложением, которое собирается в статические файлы и встраивается в firmware.
+Browser studio for preparing jobs and uploading them to the ESP32-S3 controller over Wi-Fi.
 
-## Почему подготовка картинки должна жить здесь
+## Stack
 
-Потому что браузер уже умеет:
-- декодировать изображения;
-- крутить и масштабировать canvas;
-- показывать preview без нагрузки на микроконтроллер;
-- быстро менять параметры без лишней записи во flash.
+- Vite
+- Vanilla JavaScript (ES modules)
+- Canvas-based scene editor
+- PWA assets (`manifest`, service worker registration)
 
-## Рекомендуемая структура
+## Current Features
+
+- Object-based scene editing:
+  - text
+  - primitives
+  - imported SVG objects
+  - imported raster images
+- Layer/object panel with selection and per-object settings
+- Operation modeling (engrave/cut style stages with speed/power/passes/order)
+- Multi-stage planner export
+- Upload modal:
+  - upload job
+  - upload + run job
+  - planner preview and API log
+- Settings modal:
+  - device base URL
+  - workspace width/height
+  - grid visibility
+- Device config persistence in browser local storage
+
+## Project Structure
 
 ```text
 frontend/
+  index.html
   package.json
-  vite.config.ts
+  vite.config.js
+  public/
+    manifest.webmanifest
+    sw.js
+    icons/
   src/
-    app/
+    main.js
+    app/bootstrap.js
+    styles/app.css
     features/
-      image-prep/
+      editor/
+      layers/
+      operations/
+      objects/
+      import/
       jobs/
-      machine/
-      control/
-    entities/
-      job/
-      machine/
-      settings/
     shared/
       api/
-      ws/
-      canvas/
-      lib/
-      ui/
+      state/
+      settings/
+      pwa/
 ```
 
-## Основные сценарии UI
+## Run
 
-- загрузка изображения;
-- crop / rotate / resize;
-- grayscale / threshold / dither;
-- настройка размеров в мм и DPI;
-- preview области гравировки;
-- загрузка job package на устройство;
-- список jobs на устройстве;
-- live status: state, progress, coordinates, power, alarms;
-- кнопки `home`, `frame`, `start`, `pause`, `resume`, `stop`.
+```powershell
+cd frontend
+npm install
+npm run dev
+```
 
-## API-контракт
+Build:
 
-Рекомендуемый раздел:
-- REST для CRUD и upload;
-- WebSocket для live state.
+```powershell
+npm run build
+```
 
-Пример REST:
-- `GET /api/status`
-- `GET /api/jobs`
-- `POST /api/jobs`
-- `POST /api/jobs/{id}/start`
-- `POST /api/control/home`
-- `POST /api/control/frame`
-- `POST /api/control/pause`
-- `POST /api/control/resume`
-- `POST /api/control/stop`
+Preview:
 
-WebSocket:
-- `/ws`
+```powershell
+npm run preview
+```
 
+## Notes
+
+- The frontend prepares job data and calls firmware APIs.
+- Real-time motion/laser logic remains in firmware.
+- Device API endpoint is configurable in Settings.

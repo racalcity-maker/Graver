@@ -1,82 +1,88 @@
-# LaserGraver (ESP32-S3)
+# LaserGraver
 
-DIY laser engraver controller firmware + web UI on `ESP32-S3` (ESP-IDF 5.3.x).
+LaserGraver is an ESP32-S3 based laser engraver controller plus a browser studio for preparing and running jobs over Wi-Fi.
 
-Проект заменяет старую связку Benbox/Nano на модульную систему:
-- embedded firmware (`ESP-IDF`)
-- web UI для телефона/ПК
-- pipeline загрузки и запуска задач
-- отдельные слои `control / motion / laser / jobs / storage / web / grbl`
+The project includes:
+- firmware (`ESP-IDF 5.3.x`) for motion, laser control, safety, storage, and APIs
+- a modular browser frontend (Vite + vanilla JS) for scene editing, staging operations, and job upload/run
 
-## Что уже работает
+## Why This Project
 
-- Wi-Fi: попытка подключения к сохраненной STA сети + fallback в AP
-- Web UI: управление осями, zero/home сценарии, frame, запуск/пауза/resume/abort
-- Загрузка задач: raster image, primitives, text
-- Режимы изображения: binary, grayscale, dither (+ опции обработки)
-- Хранение задач и runtime-конфига в SPIFFS
-- Soft-limits рабочей области
-- Базовая GRBL-совместимость по serial (MVP)
+Main goals:
+- replace closed/legacy controller stacks with an open and maintainable architecture
+- keep the whole flow reproducible: scene -> job -> execution
+- make motion and safety behavior explicit (state, alarms, command queue)
 
-## Что важно помнить сейчас
+## Current Capabilities
 
-- Это активная стадия разработки и отладки железа, не production.
-- Безопасность должна считаться неполной, пока не завершен hard emergency-stop pipeline.
-- Качество/скорость зависят от текущего motion backend и калибровки драйвера лазера.
+- XY motion with configurable machine limits and work-zero workflow
+- laser PWM control with runtime safety checks
+- raster jobs (binary / grayscale / dither modes)
+- vector jobs (primitives and vector text, including fill mode)
+- pause / resume / abort controls
+- web API + embedded UI
+- GRBL serial compatibility (MVP level)
+- AP + STA networking fallback logic
 
-## Быстрый старт (firmware)
-
-Требования:
-- `ESP-IDF 5.3.x`
-- target: `esp32s3`
-
-Сборка:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command ". 'C:\Espressif\frameworks\esp-idf-v5.3.3\export.ps1'; idf.py set-target esp32s3; idf.py build"
-```
-
-Прошивка и монитор:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command ". 'C:\Espressif\frameworks\esp-idf-v5.3.3\export.ps1'; idf.py -p COMx flash monitor"
-```
-
-Настройка параметров платы:
+## Repository Layout
 
 ```text
-idf.py menuconfig -> LaserGraver
+LaserGraver/
+  firmware/     ESP-IDF firmware
+  frontend/     Browser studio (PWA-ready)
+  docs/         Architecture and job format notes
+  tools/        Utility scripts
+  TODO.md       Staged roadmap and implementation tracker
 ```
 
-Детали по пинам, разделам конфигурации и слоям: `firmware/README.md`.
+## Firmware Overview
 
-## Конфиг и данные во flash
+Core firmware components:
+- `app`: wiring and startup
+- `machine`: top-level orchestration and state ownership
+- `control`: command queue and operation flow
+- `motion`: movement execution and step backend integration
+- `laser`: PWM and laser arm/disarm safety behavior
+- `jobs`: raster/vector parsing and execution entry points
+- `storage`: SPIFFS and persisted configs/jobs
+- `web`: HTTP API and embedded pages/assets
+- `grbl`: serial command compatibility layer
+- `board`: GPIO and low-level board HAL
 
-- Runtime machine config: `/spiffs/config/machine.json`
-- Jobs: `/spiffs/jobs/<job-id>/`
+Build details and pin defaults: see `firmware/README.md`.
 
-Если `machine.json` отсутствует, используются compile-time defaults из `menuconfig`.
+## Frontend Overview
 
-## Структура репозитория
+The browser app supports:
+- scene object editing (text, primitives, imported vectors/raster)
+- layer and operation assignment
+- per-operation process parameters (engrave/cut stages)
+- upload window with planner output and one-click run
+- settings window (device URL, workspace size, grid)
 
-```text
-docs/          архитектура, формат задач
-firmware/      ESP-IDF проект
-frontend/      UI исходники и notes
-tools/         утилиты разработки
-TODO.md        актуальный технический backlog
-```
+Run details: see `frontend/README.md`.
 
-## Документация
+## Typical Workflow
 
-- [Firmware README](C:/Users/test/Documents/Arduino/LaserGraver/firmware/README.md)
-- [Architecture](C:/Users/test/Documents/Arduino/LaserGraver/docs/architecture.md)
-- [Job Format](C:/Users/test/Documents/Arduino/LaserGraver/docs/job-format.md)
-- [TODO / Roadmap](C:/Users/test/Documents/Arduino/LaserGraver/TODO.md)
+1. Configure machine defaults (`menuconfig`) and optionally runtime JSON config.
+2. Flash firmware and connect to device AP/STA.
+3. Open browser studio, prepare scene objects and operations.
+4. Generate staged job plan.
+5. Upload manifest/raster payload to device.
+6. Run, monitor, pause/resume/abort if needed.
 
-## Принципы проекта
+## Safety Notes
 
-- Реалтайм-движение не должно зависеть от HTTP/UI нагрузки.
-- Предобработка изображений по возможности в браузере, не на MCU.
-- Лазер по умолчанию всегда в безопасном состоянии (`off`) при старте/паузе/alarm.
-- Конфиг машины должен быть data-driven, а не захардкожен в коде.
+- Laser should remain off by default and only arm during valid active operations.
+- E-stop, lid interlock, and limits must be wired and validated before production use.
+- Never run unattended while tuning power/speed/material presets.
+
+## Roadmap and Docs
+
+- Roadmap: `TODO.md`
+- Architecture notes: `docs/architecture.md`
+- Job format contract: `docs/job-format.md`
+
+---
+
+This is a personal project made for educational purposes.

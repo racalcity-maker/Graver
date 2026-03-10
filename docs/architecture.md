@@ -4,103 +4,90 @@
 
 ### Firmware
 
-Firmware is responsible for:
-- machine state and safety
-- motor motion and step generation
-- laser PWM and gating
-- job persistence and execution
-- HTTP/WebSocket API
+Firmware owns:
+- machine state and alarms
+- motion execution and axis constraints
+- laser drive and runtime safety enforcement
+- job storage and execution
+- device APIs (web and GRBL serial bridge)
 
-Firmware is **not** responsible for heavy image preprocessing.
+Firmware does not do heavy image authoring tasks.
 
-### Browser UI
+### Frontend
 
-Frontend is responsible for:
-- image/text/primitive preparation
-- preview and parameter tuning
-- manifest + payload generation
-- upload and run control
+Frontend owns:
+- scene/object editing
+- operation staging (engrave/cut passes and order)
+- raster/vector preparation
+- planner export and upload/run orchestration
 
-## 2. Runtime Layers
+## 2. Runtime Service Layers
 
-### `app`
-- service wiring
-- boot sequence
-- startup order and dependency ownership
+- `app`: startup order and dependency wiring
+- `board`: hardware abstraction (GPIO/timer/RMT integration points)
+- `machine`: top-level machine state owner and transitions
+- `control`: command queue and operation sequencing
+- `motion`: physical move execution, limits, homing primitives
+- `laser`: PWM and arm/disarm contract
+- `jobs`: manifest parsing + raster/vector executors
+- `storage`: SPIFFS config and job persistence
+- `web`: HTTP routes and web assets
+- `grbl`: serial protocol compatibility layer
 
-### `board`
-- low-level hardware access (GPIO, timers, step pulses)
-- board-specific pin behavior
+## 3. Command and State Model
 
-### `motion`
-- movement API (`jog`, `moveTo`, `goToZero`)
-- step/mm conversions
-- soft limits
-- row execution path for raster jobs
+- Web/GRBL layers submit commands.
+- Control queue serializes execution.
+- Machine/control services own active state.
+- Status is exposed as snapshots for UI polling.
 
-### `laser`
-- PWM configuration
-- laser arm/disarm state
-- safe off behavior
+Target state model (partially implemented):
+- `Idle`
+- `Running`
+- `Paused`
+- `Homing`
+- `Alarm` / `EstopLatched`
 
-### `jobs`
-- manifest parsing and validation
-- raster/vector job loading
-- raster/vector executors
+## 4. Data Flow
 
-### `storage`
-- SPIFFS mount and file I/O
-- machine config load/save
-- job files load/save
+1. Frontend builds scene and stage plan.
+2. Frontend uploads manifest (+ raster payload if needed).
+3. Firmware stores under `/spiffs/jobs/<job-id>/`.
+4. Frontend requests run.
+5. Control dispatches to raster/vector executor.
+6. Motion and laser run in real time with safety checks.
 
-### `control`
-- command queue and runtime orchestration
-- run/pause/resume/abort command routing
-
-### `web`
-- REST endpoints
-- status API
-- web asset serving
-
-## 3. Data Flow
-
-1. User prepares job in browser.
-2. Browser uploads `manifest.json` (+ `raster.bin` for raster jobs).
-3. Firmware stores job under `/spiffs/jobs/<job-id>/`.
-4. User runs job via API/UI.
-5. Control layer dispatches to raster/vector executor.
-6. Motion + laser layers execute in realtime.
-
-## 4. Job Execution Modes
+## 5. Execution Modes
 
 ### Raster
-- row-driven execution
-- per-row active-range trimming
-- serpentine support
-- travel speed on laser-off segments
+- row-oriented execution
+- active segment trimming
+- serpentine/bidirectional path support
+- faster travel on laser-off segments
 
 ### Vector
-- path/stroke based execution
-- useful for fast primitives and fast text mode
+- stroke/path execution
+- primitives and vector text workflows
+- contour and fill strategies
 
-## 5. Safety Model
+## 6. Safety Model
 
-- Laser off by default.
-- Laser off on pause, stop, alarm.
-- Commands rejected in invalid state.
-- Soft limits enforce configured work area.
+- laser off by default
+- immediate laser off on pause/stop/alarm
+- safety inputs (estop/lid/limits) can latch alarm state
+- invalid-state commands are rejected
+- soft limits clamp work envelope
 
-## 6. Networking Model
+## 7. Networking
 
-- If saved STA credentials exist:
-  - try connect up to 3 times within 15 seconds
-  - fallback to AP if connection fails
-- If no saved STA:
-  - start AP immediately
+- try STA first (when credentials exist)
+- retry with bounded attempts/time window
+- fallback to AP on STA failure
+- AP immediately if no saved STA config
 
-## 7. Configuration
+## 8. Configuration Precedence
 
-- Compile-time defaults: `menuconfig`
-- Runtime override: `/spiffs/config/machine.json`
-- Runtime config always takes precedence over defaults.
+1. `menuconfig` defaults
+2. `/spiffs/config/machine.json` runtime overrides
 
+Runtime JSON takes precedence after boot.

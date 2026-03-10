@@ -2,57 +2,50 @@
 
 ESP-IDF firmware for the `ESP32-S3` laser graver controller.
 
-## Quick Start
+## Build
 
-Validated with `ESP-IDF 5.3.x` and target `esp32s3`.
+Validated with `ESP-IDF 5.3.x`, target `esp32s3`.
 
-PowerShell:
+PowerShell quick build:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command ". 'C:\Espressif\frameworks\esp-idf-v5.3.3\export.ps1'; idf.py set-target esp32s3; idf.py build"
 ```
 
-If target is already set:
+If target is already configured:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command ". 'C:\Espressif\frameworks\esp-idf-v5.3.3\export.ps1'; idf.py build"
 ```
 
-## Menuconfig
+## Configuration Model
 
-Machine-specific options are available in:
+Settings come from two layers:
 
-```text
-idf.py menuconfig -> LaserGraver
-```
+1. Compile-time defaults (`menuconfig -> LaserGraver`)
+2. Runtime config (`/spiffs/config/machine.json`)
 
-Main sections:
-- `GPIO Pins`
-- `Motion Defaults`
-- `Laser Defaults`
-- `Network Defaults`
-- `Safety Defaults`
-- `GRBL Compatibility`
+Runtime config overrides compile-time defaults after boot.
 
-Important: values from `/spiffs/config/machine.json` override these compile-time defaults after boot.
+Reference files:
+- `firmware/config/machine.example.json`
+- `firmware/config/machine.example.yaml`
 
-## Runtime Config
+## Key Modules
 
-Firmware first tries to load machine config from:
+- `app`: startup and dependency wiring
+- `machine`: machine-level state and orchestration
+- `control`: command queue (`jog`, `home`, `set zero`, `run`, `pause`, `resume`, `abort`, `clear alarm`)
+- `motion`: move execution and backend step engine integration
+- `laser`: PWM, arm/disarm, safe-off behavior
+- `jobs`: raster/vector job parsing and execution entry
+- `storage`: SPIFFS config and job persistence
+- `web`: API and embedded web resources
+- `grbl`: serial GRBL-compatible command adapter
+- `board`: HAL and pin-level operations
 
-```text
-/spiffs/config/machine.json
-```
+## Default Pin Map (Current Bring-Up)
 
-If the file is missing, firmware uses compiled defaults from `shared::BuildDefaultMachineConfig()`.
-
-Examples:
-- [machine.example.json](C:/Users/test/Documents/Arduino/LaserGraver/firmware/config/machine.example.json)
-- [machine.example.yaml](C:/Users/test/Documents/Arduino/LaserGraver/firmware/config/machine.example.yaml)
-
-## Current Default Pins
-
-Default `menuconfig` mapping for bring-up on `ESP32-S3`:
 - `X STEP = GPIO8`
 - `X DIR = GPIO9`
 - `X secondary STEP = -1`
@@ -63,45 +56,33 @@ Default `menuconfig` mapping for bring-up on `ESP32-S3`:
 - `Y secondary DIR = GPIO7`
 - `MOTORS ENABLE = GPIO10`
 - `LASER PWM = GPIO20`
-- `LASER GATE = -1` (disabled)
+- `LASER GATE = -1`
 - `X LIMIT = GPIO14`
 - `Y LIMIT = GPIO15`
 - `E-STOP = GPIO16`
 - `LID INTERLOCK = GPIO17`
 
-Default axis layout:
-- `X`: one motor
-- `Y`: two motors
-- `Y secondaryUsesSeparateDriver = false`
+Axis layout defaults:
+- X axis: single motor/driver path
+- Y axis: dual-motor capable path
 
-## Layer Responsibilities
+## Safety and Runtime Guarantees
 
-- `board`: low-level GPIO and ESP-IDF hardware access
-- `shared`: shared DTO/config types
-- `machine`: state machine and orchestration
-- `motion`: step generation and axis services
-- `laser`: PWM and laser safety behavior
-- `jobs`: job metadata and execution inputs
-- `storage`: SPIFFS, machine config, job files
-- `web`: HTTP API and future web assets
-- `grbl`: serial GRBL-compat protocol adapter
-- `app`: service wiring and startup sequence
-
-## Engineering Rules
-
-- Laser must default to off.
-- Web handlers must not drive GPIO directly.
-- UI commands should go through `machine` or dedicated services.
-- Motion code should stay independent from HTTP and JSON.
+- Laser defaults to off.
+- Alarms can latch machine in blocked state until cleared.
+- Web/API handlers do not control GPIO directly.
+- Motion and laser execution go through control/machine services.
 
 ## GRBL Compatibility (MVP)
 
-- Enable/disable in `menuconfig -> LaserGraver -> GRBL Compatibility`.
-- Firmware exposes a serial GRBL-compatible endpoint with:
-  - banner `Grbl 1.1f ['$' for help]`
-  - `ok` / `error:n`
-  - realtime `?`, `!`, `~`, `Ctrl-X`
-  - `$` commands: `$$`, `$I`, `$G`, `$X`, `$H`
-  - G-code: `G0`, `G1`, `G4`, `G20`, `G21`, `G90`, `G91`, `G92(X0 Y0)`
-  - spindle words: `M3`, `M4`, `M5`, `S`
-- Current limitation: live laser power synchronized with streamed `G1` is not implemented yet; motion runs as dry move for streamed G-code.
+Enable in `menuconfig -> LaserGraver -> GRBL Compatibility`.
+
+Implemented baseline:
+- banner `Grbl 1.1f ['$' for help]`
+- `ok` / `error:n`
+- realtime commands `?`, `!`, `~`, `Ctrl-X`
+- `$` commands: `$$`, `$I`, `$G`, `$X`, `$H`
+- core gcode: `G0`, `G1`, `G4`, `G20`, `G21`, `G90`, `G91`, `G92(X0 Y0)`
+- spindle words: `M3`, `M4`, `M5`, `S`
+
+Current status: compatibility is usable for basic host tooling, but still not full GRBL parity.
